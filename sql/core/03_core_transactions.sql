@@ -18,8 +18,11 @@ CREATE TABLE IF NOT EXISTS core.transactions (
     destination_account_id BIGINT
         REFERENCES core.accounts(id),
 
-    merchant_id BIGINT,
-    agency_id BIGINT,
+    merchant_id BIGINT
+        REFERENCES core.merchants(id),
+
+    agency_id BIGINT
+        REFERENCES core.agencies(id),
 
     status TEXT NOT NULL,
     failure_reason TEXT,
