@@ -1,0 +1,17 @@
+CREATE SCHEMA IF NOT EXISTS reference;
+
+CREATE TABLE IF NOT EXISTS reference.wilayas (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS reference.tx_types (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS reference.categories (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE
+);
