@@ -32,17 +32,17 @@ CONTAINER_NAME="${CONTAINER_NAME:-nafadpay-postgres}"
 export DB_NAME DB_USER DB_PASSWORD DB_PORT CONTAINER_NAME
 
 echo "=================================================="
-echo "  NAFAD PAY —  Bootstrap"
+echo "  NAFAD PAY -  Bootstrap"
 echo "=================================================="
 echo ""
 
-# Step 1 — Start container
+# Step 1 - Start container
 echo "[1/5] Starting PostgreSQL container ..."
 docker compose -f docker/docker-compose.yml up -d
 echo "      Container started."
 echo ""
 
-# Step 2 — Wait for healthy
+# Step 2 - Wait for healthy
 echo "[2/5] Waiting for PostgreSQL to be ready ..."
 READY=0
 for i in $(seq 1 30); do
@@ -61,17 +61,17 @@ fi
 echo "      PostgreSQL is ready."
 echo ""
 
-# Step 3 — Create schema and tables
+# Step 3 - Create schema and tables
 echo "[3/5] Creating staging schema and tables ..."
 bash scripts/init_staging.sh
 echo ""
 
-# Step 4 — Load reference data
+# Step 4 - Load reference data
 echo "[4/5] Loading reference data ..."
 bash scripts/load_reference.sh
 echo ""
 
-# Step 5 — Load raw G1 data
+# Step 5 - Load raw G1 data
 echo "[5/5] Loading raw G1 data ..."
 bash scripts/load_raw.sh
 echo ""
