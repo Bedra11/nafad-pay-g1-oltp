@@ -30,24 +30,27 @@ Each row from staging is processed using the following logic:
 A row is routed to ANOMALIES if:
 
 Règle 1:
-IF idempotency_key is duplicated with different payload
-→ ANOMALIES
-→ reason = idempotency_conflict
+IF idempotency_key is duplicated with different payload  
+→ ANOMALIES  
+→ reason = idempotency_conflict  
 
 Règle 2:
-IF status = 'FAILED' AND balance_after != balance_before
-→ ANOMALIES
-→ reason = invalid_failed_balance
+IF status = 'FAILED' AND balance_after != balance_before  
+→ ANOMALIES  
+→ reason = invalid_failed_balance  
 
 Règle 3:
-IF amount <= 0
-→ ANOMALIES
-→ reason = invalid_amount
+IF amount <= 0  
+→ ANOMALIES  
+→ reason = invalid_amount  
 
 Règle 4:
-IF balance_after < 0
-→ ANOMALIES
-→ reason = negative_balance
+IF balance_after < 0  
+→ ANOMALIES  
+→ reason = negative_balance  
+
+Note:  
+A row may have multiple anomaly types if several critical conditions are triggered.
 
 ---
 
@@ -56,24 +59,24 @@ IF balance_after < 0
 A row is routed to QUARANTINE if:
 
 Règle 5:
-IF source_account_id is missing or does not exist
-→ QUARANTINE
-→ reason = missing_source_account
+IF source_account_id is missing or does not exist  
+→ QUARANTINE  
+→ reason = missing_source_account  
 
 Règle 6:
-IF destination_account_id is required but missing or invalid
-→ QUARANTINE
-→ reason = missing_destination_account
+IF destination_account_id is required but missing or invalid  
+→ QUARANTINE  
+→ reason = missing_destination_account  
 
 Règle 7:
-IF transaction_type = 'PAY' AND merchant_id IS NULL
-→ QUARANTINE
-→ reason = missing_merchant
+IF transaction_type = 'PAY' AND merchant_id IS NULL  
+→ QUARANTINE  
+→ reason = missing_merchant  
 
 Règle 8:
-IF agency_id is required but missing
-→ QUARANTINE
-→ reason = missing_agency
+IF agency_id is required but missing  
+→ QUARANTINE  
+→ reason = missing_agency  
 
 ---
 
@@ -82,10 +85,27 @@ IF agency_id is required but missing
 A row is routed to CORE if:
 
 Règle 9:
-IF all required references exist
-AND no anomaly condition is triggered
-AND all business constraints are satisfied
-→ CORE
+IF all required references exist  
+AND no anomaly condition is triggered  
+AND all business constraints are satisfied  
+→ CORE  
+
+---
+
+### 3.4 Routing Priority (Critical)
+
+To ensure consistency and avoid overlapping classifications, the routing process follows a strict priority order:
+
+1. Anomalies (highest priority)  
+2. Quarantine  
+3. Core (only if no other condition is met)  
+
+This implies:
+
+* A row classified as anomaly must NOT be inserted into quarantine
+* A row classified as anomaly must NOT be inserted into core
+* A row classified as idempotency conflict must NOT be inserted into quarantine
+* Each row must belong to exactly one final category
 
 ---
 
@@ -107,3 +127,4 @@ The system ensures:
 * full preservation of raw data in staging
 * strict validation before insertion into core
 * clear separation between valid data, recoverable issues, and critical errors
+* deterministic routing with no overlap between anomalies, quarantine, and core

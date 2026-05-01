@@ -1,6 +1,6 @@
 -- ============================================================
 -- 01_validation_routing_checks.sql
--- Verification tests for Member 3: validation / quarantine / anomalies
+-- Verification tests for Member 3: validation / quarantine / anomalies + core_ready
 -- ============================================================
 
 -- 1. Global row counts
@@ -8,7 +8,8 @@ SELECT
     (SELECT COUNT(*) FROM staging.transactions) AS staging_transactions,
     (SELECT COUNT(*) FROM anomalies.transaction_anomalies) AS transaction_anomalies,
     (SELECT COUNT(*) FROM anomalies.idempotency_conflicts) AS idempotency_conflicts,
-    (SELECT COUNT(*) FROM quarantine.quarantine_transactions) AS quarantine_transactions;
+    (SELECT COUNT(*) FROM quarantine.quarantine_transactions) AS quarantine_transactions,
+    (SELECT COUNT(*) FROM core_ready.transactions) AS core_ready_transactions;
 
 -- 2. Anomaly types distribution
 SELECT anomaly_type, COUNT(*) AS total
@@ -120,7 +121,7 @@ AND t.id NOT IN (
 )
 AND q.staging_transaction_id IS NULL;
 
--- 13. Sample invalid amount rows and their anomaly classification
+-- 13. Sample invalid amount rows
 SELECT t.id, t.amount, a.anomaly_type
 FROM staging.transactions t
 JOIN anomalies.transaction_anomalies a
@@ -128,3 +129,37 @@ ON t.id = a.staging_transaction_id
 WHERE t.amount::numeric <= 0
 ORDER BY t.id
 LIMIT 10;
+
+-- ============================================================
+-- 🔥 STEP 6 TESTS — CORE READY
+-- ============================================================
+
+-- 14. Ensure core_ready has no transaction anomalies
+SELECT COUNT(*) AS core_ready_overlap_transaction_anomalies
+FROM core_ready.transactions c
+JOIN anomalies.transaction_anomalies a
+ON c.id = a.staging_transaction_id;
+
+-- 15. Ensure core_ready has no idempotency conflicts
+SELECT COUNT(*) AS core_ready_overlap_idempotency_conflicts
+FROM core_ready.transactions c
+JOIN anomalies.idempotency_conflicts i
+ON c.id = i.staging_transaction_id;
+
+-- 16. Ensure core_ready has no quarantine rows
+SELECT COUNT(*) AS core_ready_overlap_quarantine
+FROM core_ready.transactions c
+JOIN quarantine.quarantine_transactions q
+ON c.id = q.staging_transaction_id;
+
+-- ✅ 17. Correct core_ready calculation (FIXED)
+WITH excluded AS (
+    SELECT staging_transaction_id FROM anomalies.transaction_anomalies
+    UNION
+    SELECT staging_transaction_id FROM anomalies.idempotency_conflicts
+    UNION
+    SELECT staging_transaction_id FROM quarantine.quarantine_transactions
+)
+SELECT
+    (SELECT COUNT(*) FROM staging.transactions) - (SELECT COUNT(*) FROM excluded) AS expected_core_ready,
+    (SELECT COUNT(*) FROM core_ready.transactions) AS actual_core_ready;
