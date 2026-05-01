@@ -1,4 +1,4 @@
-# G1 OLTP — Exploration Notes, Open Questions, and Modeling Trade-offs
+# G1 OLTP - Exploration Notes, Open Questions, and Modeling Trade-offs
 
 This document is a working summary of our first exploration pass on the G1 OLTP dataset.  
 It is **not** intended as a final design decision document yet. The goal here is to:
@@ -209,7 +209,7 @@ In other words, `wilaya_id` looks like the authoritative relational field, while
 ### Remaining trade-off
 The main remaining design choice is not whether the wilaya reference is valid, but whether to keep both fields in the final model:
 
-#### Option A — keep only `wilaya_id` in the normalized core
+#### Option A - keep only `wilaya_id` in the normalized core
 Pros:
 - avoids duplication
 - keeps one source of truth
@@ -218,7 +218,7 @@ Pros:
 Cons:
 - requires a join to display the name
 
-#### Option B — keep both `wilaya_id` and `wilaya_name` in the core
+#### Option B - keep both `wilaya_id` and `wilaya_name` in the core
 Pros:
 - simpler direct reads
 - easier display without joins
@@ -264,7 +264,7 @@ This does **not automatically mean bad data**. It may simply mean:
 ### Trade-off
 We see two possible directions:
 
-#### Option A — keep many transaction columns nullable
+#### Option A - keep many transaction columns nullable
 Pros:
 - easier to fit the raw data
 - closer to the actual operational diversity of transaction types
@@ -273,7 +273,7 @@ Cons:
 - weakens strictness
 - makes some invariants less obvious
 
-#### Option B — split transactions into more specialized subtypes or business rules
+#### Option B - split transactions into more specialized subtypes or business rules
 Pros:
 - cleaner semantics
 - stricter per-type validation
@@ -521,7 +521,7 @@ Are those reference tables intended only as code dictionaries, or should we also
 
 ---
 
-## 11. What all this suggests about modeling — without locking the decision yet
+## 11. What all this suggests about modeling - without locking the decision yet
 
 At this point, we do **not** want to claim “this is the final model.”  
 But the exploration does suggest some likely directions.
@@ -567,7 +567,7 @@ This makes us think that constraint design should follow the pipeline stage, not
 
 ## 12. Main trade-offs we see right now
 
-### Trade-off A — strictness vs preserving evidence
+### Trade-off A - strictness vs preserving evidence
 If we make the final schema strict immediately:
 - we get strong integrity
 - but we reject a lot of rows
@@ -576,11 +576,11 @@ If we keep everything permissive:
 - we preserve evidence
 - but we lose trust in the core tables
 
-### Trade-off B — one transaction table vs more specialized structure
+### Trade-off B - one transaction table vs more specialized structure
 A single wide transaction table is simpler.
 But the sparsity patterns suggest that different transaction types may not share all the same fields meaningfully.
 
-### Trade-off C — deduplicate aggressively vs preserve anomalies
+### Trade-off C - deduplicate aggressively vs preserve anomalies
 For `reference` and `idempotency_key`, deduplicating too early may hide important anomalies.
 Preserving all rows forever in the core, however, weakens the meaning of those business identifiers.
 
