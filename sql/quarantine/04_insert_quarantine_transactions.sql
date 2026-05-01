@@ -24,6 +24,10 @@ WHERE (
 AND t.id NOT IN (
     SELECT staging_transaction_id
     FROM anomalies.transaction_anomalies
+)
+AND t.id NOT IN (
+    SELECT staging_transaction_id
+    FROM anomalies.idempotency_conflicts
 );
 
 ------------------------------------------------------------
@@ -54,6 +58,10 @@ WHERE (
 AND t.id NOT IN (
     SELECT staging_transaction_id
     FROM anomalies.transaction_anomalies
+)
+AND t.id NOT IN (
+    SELECT staging_transaction_id
+    FROM anomalies.idempotency_conflicts
 );
 
 ------------------------------------------------------------
@@ -79,4 +87,8 @@ WHERE t.transaction_type = 'PAY'
   AND t.id NOT IN (
     SELECT staging_transaction_id
     FROM anomalies.transaction_anomalies
+)
+  AND t.id NOT IN (
+    SELECT staging_transaction_id
+    FROM anomalies.idempotency_conflicts
 );
