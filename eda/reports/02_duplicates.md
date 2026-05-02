@@ -8,10 +8,10 @@
 | users_sample.csv | email | 593 | 407 | 0 | 0 | false |  |
 | accounts_sample.csv | id | 0 | 1099 | 0 | 0 | true |  |
 | accounts_sample.csv | account_number | 0 | 1099 | 0 | 0 | true |  |
-| accounts_sample.csv | user_id | 0 | 1000 | 66 | 165 | false | 16, 2650, 3331, 3434, 3999, 4991, 5962, 7355, 7785, 8122 |
+| accounts_sample.csv | user_id | 0 | 1000 | 66 | 165 | false | 2650, 4000, 4193, 4457, 5945, 8122, 8351, 8443, 8919, 9441 |
 | transactions_sample.csv | id | 0 | 10000 | 0 | 0 | true |  |
 | transactions_sample.csv | reference | 0 | 9997 | 3 | 6 | false | TX20240601272037, TX20241108547800, TX20241212196762 |
-| transactions_sample.csv | idempotency_key | 0 | 6266 | 2682 | 6416 | false | 39f99a82-5ee6-4879-88e5-885344f0f4b7, 40bb5628-121e-4c31-9257-56566775d4de, 6233193d-1760-42d3-a847-f90540959a11, 7d934e84-ac5a-4d2e-b17c-3e825a3be8ae, 9dfc6635-f4e4-467c-b6e0-e30e84c0e0b1, b5341373-5baf-4ddc-ba71-64a1a8572404, b819dea4-2275-4d92-9eaf-b0ddc581d841, cb9a3719-6c72-4c0c-96be-d0375aab55f3, d48031ac-7d57-4f31-8633-8161ff578dde, e4f9a0b6-23c6-4046-9229-dc29164640ee |
+| transactions_sample.csv | idempotency_key | 0 | 6266 | 2682 | 6416 | false | 0f1f10af-8fb4-47d1-9176-e502f3fbaa18, 2d7d2fca-974f-4e6e-a2dc-4fda85ecec56, 591b803f-6bfe-4fd2-845b-16276dffd044, 765f57a9-91a6-495f-aa36-70883fbda027, 7fe403b7-a736-4005-b0fd-864c3447d90e, bc280464-190b-46a9-ab24-78045207af76, da73967d-7657-4f8a-8231-86c1e3393764, df73dcf0-3cb8-40e8-afb2-dc5e42acaa9c, e54c96c4-58f7-4656-b968-5987e12c574e, e6ee2dc4-fda8-45ec-ac56-2c478752a49e |
 | merchants_sample.csv | id | 0 | 100 | 0 | 0 | true |  |
 | merchants_sample.csv | code | 0 | 100 | 0 | 0 | true |  |
 | agencies_sample.csv | id | 0 | 50 | 0 | 0 | true |  |
