@@ -16,7 +16,7 @@ INSERT INTO core.users (
 )
 SELECT DISTINCT
     NULLIF(id, '')::bigint,
-    nni,
+    NULLIF(nni, ''),  
     phone,
     NULLIF(full_name, ''),
     NULLIF(gender, ''),
@@ -30,8 +30,16 @@ SELECT DISTINCT
 FROM staging.users
 WHERE id IS NOT NULL
 AND id <> ''
-AND nni ~ '^[0-9]{10}$'
+
+
+AND (
+    nni IS NULL
+    OR nni = ''
+    OR nni ~ '^[0-9]{10}$'
+)
+
 AND phone ~ '^\+222[0-9]{8}$'
 AND wilaya_id IS NOT NULL
 AND wilaya_id <> ''
+
 ON CONFLICT (id) DO NOTHING;
