@@ -24,6 +24,7 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 .terraform.lock.hcl
+terraform/terraform.tfvars
 
 # Python cache
 __pycache__/
