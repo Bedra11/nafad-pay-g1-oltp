@@ -3,6 +3,14 @@
 -- PROJECT  : NAFAD PAY — G1 OLTP Pipeline
 -- MEMBER   : Member 4 — Queries & Performance & AWS
 -- CREATED  : 2026-05-02
+-- UPDATED  : 2026-05-03
+--
+-- CHANGES (2026-05-03):
+--   - Q5, Q6 : fixed wilaya reference — core.users has no wilaya_name column;
+--              added JOIN reference.wilayas and use w.name instead
+--   - \set user_id : updated from 1 (non-existent in core) to 4719 (verified)
+--   - \set ref_val : updated to a reference verified to exist in core.transactions
+--   - Q9, Q10, Q17 : added explanatory comment — 0 rows is correct behavior
 --
 -- DESCRIPTION:
 --   20 analytical SQL queries covering:
@@ -14,18 +22,23 @@
 --     Section 6 : Data quality checks      (Q18–Q20)
 --
 -- USAGE:
---   docker exec -i nafadpay-postgres psql -U admin -d nafadpay < nafadpay_queries.sql
+--   docker exec -i nafadpay-postgres psql -U admin -d nafadpay \
+--     < sql/queries/nafadpay_queries.sql
 --
 -- NOTE:
 --   Variables are set with \set below — change values as needed.
 --   To get valid test IDs: SELECT id, full_name FROM core.users LIMIT 10;
 -- ============================================================
 
--- ── demo parameters (change these) ───────────────────────────────────────────
-\set user_id       1
+-- ── demo parameters ───────────────────────────────────────────────────────────
+-- FIX: user_id was 1, which does not exist in core.users.
+--      Verified user_id=4719 has transactions in core.transactions.
+\set user_id       4719
 \set start_date    '2024-01-01'
 \set end_date      '2024-12-31'
-\set ref_val       'TX20241212196762'
+-- FIX: ref_val 'TX20241212196762' did not exist in core.transactions.
+--      Replaced with a reference verified to exist.
+\set ref_val       'TX20241224350064'
 
 
 -- ============================================================
@@ -116,7 +129,12 @@ WHERE t.reference = :'ref_val';
 
 -- ------------------------------------------------------------
 -- Q5 : Full account summary for a user
--- Note: wilaya_name lives on core.users directly (no reference.wilayas join needed)
+--
+-- FIX: original query referenced u.wilaya_name which does not exist
+-- on core.users. core.users stores only wilaya_id (FK to reference.wilayas).
+-- wilaya_name is a descriptive field kept only in staging and in
+-- reference.wilayas — this is by design (strict core, no redundant fields).
+-- Added JOIN reference.wilayas w and use w.name instead.
 -- ------------------------------------------------------------
 \echo '=== Q5 : Account summary for user ==='
 SELECT
@@ -134,15 +152,18 @@ SELECT
     a.last_activity,
     u.full_name,
     u.phone,
-    u.wilaya_name AS wilaya
+    w.name AS wilaya
 FROM core.accounts a
-JOIN core.users u ON a.user_id = u.id
+JOIN core.users        u ON a.user_id    = u.id
+LEFT JOIN reference.wilayas w ON w.id   = u.wilaya_id
 WHERE a.user_id = :user_id;
 
 
 -- ------------------------------------------------------------
 -- Q6 : Top 20 accounts by balance (richest accounts)
--- Note: wilaya_name lives on core.users directly
+--
+-- FIX: same wilaya_name issue as Q5.
+-- Added JOIN reference.wilayas w and use w.name instead.
 -- ------------------------------------------------------------
 \echo '=== Q6 : Top 20 accounts by balance ==='
 SELECT
@@ -151,9 +172,10 @@ SELECT
     a.balance,
     a.currency,
     u.full_name,
-    u.wilaya_name AS wilaya
+    w.name AS wilaya
 FROM core.accounts a
-JOIN core.users u ON a.user_id = u.id
+JOIN core.users        u ON a.user_id  = u.id
+LEFT JOIN reference.wilayas w ON w.id = u.wilaya_id
 WHERE a.status = 'ACTIVE'
 ORDER BY a.balance DESC
 LIMIT 20;
@@ -198,7 +220,13 @@ ORDER BY a.account_number, month DESC;
 
 -- ------------------------------------------------------------
 -- Q9 : Top 20 merchants by transaction volume
--- Note: uses reference.categories and reference.wilayas (loaded by pipeline)
+--
+-- NOTE: Returns 0 rows on this dataset. All 66 core transactions
+-- are type TRF (account-to-account transfer). PAY and merchant-linked
+-- transactions were entirely routed to quarantine (missing merchant
+-- references) or anomalies (idempotency conflicts) by the pipeline.
+-- This is correct strict-core behavior, not a query bug.
+-- Query is valid and will return data on a production dataset.
 -- ------------------------------------------------------------
 \echo '=== Q9 : Top merchants by volume ==='
 SELECT
@@ -221,6 +249,10 @@ LIMIT 20;
 
 -- ------------------------------------------------------------
 -- Q10 : Merchant performance grouped by category
+--
+-- NOTE: Returns 0 rows on this dataset — same reason as Q9.
+-- All core transactions are TRF type with no merchant_id set.
+-- Query is structurally correct and production-ready.
 -- ------------------------------------------------------------
 \echo '=== Q10 : Merchant performance by category ==='
 SELECT
@@ -340,6 +372,11 @@ ORDER BY hour_of_day;
 
 -- ------------------------------------------------------------
 -- Q17 : Agency transaction volume vs float balance
+--
+-- NOTE: Returns 0 rows on this dataset. All 66 core transactions
+-- are type TRF with agency_id = NULL. Agency-linked transactions
+-- were routed to quarantine or anomalies by the pipeline.
+-- Query is structurally correct and production-ready.
 -- ------------------------------------------------------------
 \echo '=== Q17 : Agency performance ==='
 SELECT
