@@ -14,14 +14,18 @@
 --     Section 6 : Data quality checks      (Q18–Q20)
 --
 -- USAGE:
---   psql -h localhost -p 5432 -U admin -d nafadpay -f queries/nafadpay_queries.sql
+--   docker exec -i nafadpay-postgres psql -U admin -d nafadpay < nafadpay_queries.sql
 --
 -- NOTE:
---   Replace :user_id, :start_date, :end_date, :reference_value
---   with real values before running individual queries.
---   To get valid test IDs:
---     SELECT id, full_name FROM core.users LIMIT 10;
+--   Variables are set with \set below — change values as needed.
+--   To get valid test IDs: SELECT id, full_name FROM core.users LIMIT 10;
 -- ============================================================
+
+-- ── demo parameters (change these) ───────────────────────────────────────────
+\set user_id       1
+\set start_date    '2024-01-01'
+\set end_date      '2024-12-31'
+\set ref_val       'TX20241212196762'
 
 
 -- ============================================================
@@ -31,27 +35,23 @@
 -- ------------------------------------------------------------
 -- Q1 : Full transaction history for a given user
 -- ------------------------------------------------------------
+\echo '=== Q1 : Full transaction history ==='
 SELECT
     t.id,
     t.reference,
     t.transaction_type,
     t.amount,
     t.fee,
-    t.total_amount,
     t.currency,
     t.status,
     t.balance_before,
     t.balance_after,
-    t.channel,
-    t.device_type,
     t.transaction_date,
-    t.transaction_time,
     t.created_at,
-    t.completed_at,
     sa.account_number  AS source_account,
     da.account_number  AS destination_account
 FROM core.transactions t
-JOIN  core.accounts sa ON t.source_account_id      = sa.id
+JOIN      core.accounts sa ON t.source_account_id      = sa.id
 LEFT JOIN core.accounts da ON t.destination_account_id = da.id
 WHERE sa.user_id = :user_id
 ORDER BY t.created_at DESC;
@@ -60,6 +60,7 @@ ORDER BY t.created_at DESC;
 -- ------------------------------------------------------------
 -- Q2 : Transaction history filtered by date range
 -- ------------------------------------------------------------
+\echo '=== Q2 : Transactions by date range ==='
 SELECT
     t.id,
     t.reference,
@@ -70,14 +71,15 @@ SELECT
     t.created_at
 FROM core.transactions t
 JOIN core.accounts sa ON t.source_account_id = sa.id
-WHERE sa.user_id        = :user_id
-  AND t.transaction_date BETWEEN :start_date AND :end_date
+WHERE sa.user_id         = :user_id
+  AND t.transaction_date BETWEEN :'start_date' AND :'end_date'
 ORDER BY t.transaction_date DESC;
 
 
 -- ------------------------------------------------------------
 -- Q3 : Failed transactions for a given user
 -- ------------------------------------------------------------
+\echo '=== Q3 : Failed transactions ==='
 SELECT
     t.id,
     t.reference,
@@ -95,16 +97,17 @@ ORDER BY t.created_at DESC;
 -- ------------------------------------------------------------
 -- Q4 : Search transaction by exact reference number
 -- ------------------------------------------------------------
+\echo '=== Q4 : Lookup by reference ==='
 SELECT
     t.*,
     sa.account_number AS source_account,
     u.full_name       AS source_user,
     da.account_number AS destination_account
 FROM core.transactions t
-JOIN  core.accounts sa ON t.source_account_id      = sa.id
-JOIN  core.users    u  ON sa.user_id               = u.id
+JOIN      core.accounts sa ON t.source_account_id      = sa.id
+JOIN      core.users    u  ON sa.user_id               = u.id
 LEFT JOIN core.accounts da ON t.destination_account_id = da.id
-WHERE t.reference = :reference_value;
+WHERE t.reference = :'ref_val';
 
 
 -- ============================================================
@@ -113,7 +116,9 @@ WHERE t.reference = :reference_value;
 
 -- ------------------------------------------------------------
 -- Q5 : Full account summary for a user
+-- Note: wilaya_name lives on core.users directly (no reference.wilayas join needed)
 -- ------------------------------------------------------------
+\echo '=== Q5 : Account summary for user ==='
 SELECT
     a.id,
     a.account_number,
@@ -129,48 +134,51 @@ SELECT
     a.last_activity,
     u.full_name,
     u.phone,
-    w.name AS wilaya
+    u.wilaya_name AS wilaya
 FROM core.accounts a
-JOIN core.users       u ON a.user_id    = u.id
-JOIN reference.wilayas w ON u.wilaya_id = w.id
+JOIN core.users u ON a.user_id = u.id
 WHERE a.user_id = :user_id;
 
 
 -- ------------------------------------------------------------
 -- Q6 : Top 20 accounts by balance (richest accounts)
+-- Note: wilaya_name lives on core.users directly
 -- ------------------------------------------------------------
+\echo '=== Q6 : Top 20 accounts by balance ==='
 SELECT
     a.account_number,
     a.account_type,
     a.balance,
     a.currency,
     u.full_name,
-    w.name AS wilaya
+    u.wilaya_name AS wilaya
 FROM core.accounts a
-JOIN core.users        u ON a.user_id    = u.id
-JOIN reference.wilayas w ON u.wilaya_id  = w.id
+JOIN core.users u ON a.user_id = u.id
 WHERE a.status = 'ACTIVE'
 ORDER BY a.balance DESC
 LIMIT 20;
 
 
 -- ------------------------------------------------------------
--- Q7 : Data integrity — accounts where available_balance > balance
---      (should return 0 rows in a clean dataset)
+-- Q7 : Data integrity — accounts where balance < 10% of available_balance
 -- ------------------------------------------------------------
+\echo '=== Q7 : Low-balance risk accounts ==='
 SELECT
-    a.id,
-    a.account_number,
-    a.balance,
-    a.available_balance,
-    a.user_id
-FROM core.accounts a
-WHERE a.available_balance > a.balance;
+    id,
+    account_number,
+    balance,
+    available_balance,
+    user_id
+FROM core.accounts
+WHERE available_balance > 0
+  AND balance < 0.10 * available_balance
+ORDER BY balance / available_balance;
 
 
 -- ------------------------------------------------------------
 -- Q8 : Monthly spending per account (SUCCESS only)
 -- ------------------------------------------------------------
+\echo '=== Q8 : Monthly spend per account ==='
 SELECT
     a.account_number,
     DATE_TRUNC('month', t.transaction_date) AS month,
@@ -190,7 +198,9 @@ ORDER BY a.account_number, month DESC;
 
 -- ------------------------------------------------------------
 -- Q9 : Top 20 merchants by transaction volume
+-- Note: uses reference.categories and reference.wilayas (loaded by pipeline)
 -- ------------------------------------------------------------
+\echo '=== Q9 : Top merchants by volume ==='
 SELECT
     m.code,
     m.name,
@@ -199,10 +209,10 @@ SELECT
     COUNT(t.id)   AS tx_count,
     SUM(t.amount) AS total_volume,
     AVG(t.amount) AS avg_amount
-FROM core.merchants     m
-JOIN core.transactions  t  ON t.merchant_id      = m.id
-JOIN reference.categories c ON m.category_code   = c.code
-JOIN reference.wilayas   w  ON m.wilaya_id        = w.id
+FROM core.merchants      m
+JOIN core.transactions   t  ON t.merchant_id    = m.id
+JOIN reference.categories c ON m.category_code  = c.code
+JOIN reference.wilayas    w  ON m.wilaya_id      = w.id
 WHERE t.status = 'SUCCESS'
 GROUP BY m.code, m.name, c.label, w.name
 ORDER BY total_volume DESC
@@ -212,14 +222,15 @@ LIMIT 20;
 -- ------------------------------------------------------------
 -- Q10 : Merchant performance grouped by category
 -- ------------------------------------------------------------
+\echo '=== Q10 : Merchant performance by category ==='
 SELECT
     c.label              AS category,
     COUNT(DISTINCT m.id) AS merchant_count,
     COUNT(t.id)          AS tx_count,
     SUM(t.amount)        AS total_volume,
     AVG(t.amount)        AS avg_tx_amount
-FROM core.merchants      m
-JOIN core.transactions   t  ON t.merchant_id    = m.id
+FROM core.merchants       m
+JOIN core.transactions    t  ON t.merchant_id   = m.id
 JOIN reference.categories c  ON m.category_code = c.code
 WHERE t.status = 'SUCCESS'
 GROUP BY c.label
@@ -229,13 +240,14 @@ ORDER BY total_volume DESC;
 -- ------------------------------------------------------------
 -- Q11 : Merchant activity per wilaya (geographic breakdown)
 -- ------------------------------------------------------------
+\echo '=== Q11 : Merchant activity by wilaya ==='
 SELECT
     w.name               AS wilaya,
     COUNT(DISTINCT m.id) AS merchant_count,
     COUNT(t.id)          AS total_transactions,
     SUM(t.amount)        AS total_volume
-FROM core.merchants      m
-JOIN reference.wilayas   w  ON m.wilaya_id = w.id
+FROM core.merchants    m
+JOIN reference.wilayas w  ON m.wilaya_id   = w.id
 LEFT JOIN core.transactions t ON t.merchant_id = m.id AND t.status = 'SUCCESS'
 GROUP BY w.name
 ORDER BY total_volume DESC NULLS LAST;
@@ -244,6 +256,7 @@ ORDER BY total_volume DESC NULLS LAST;
 -- ------------------------------------------------------------
 -- Q12 : Inactive merchants — zero transactions
 -- ------------------------------------------------------------
+\echo '=== Q12 : Inactive merchants ==='
 SELECT
     m.id,
     m.code,
@@ -252,7 +265,7 @@ SELECT
     w.name AS wilaya
 FROM core.merchants    m
 LEFT JOIN core.transactions t ON t.merchant_id = m.id
-JOIN reference.wilayas  w ON m.wilaya_id = w.id
+JOIN reference.wilayas      w ON m.wilaya_id   = w.id
 WHERE t.id IS NULL;
 
 
@@ -263,6 +276,7 @@ WHERE t.id IS NULL;
 -- ------------------------------------------------------------
 -- Q13 : Daily transaction totals with status breakdown
 -- ------------------------------------------------------------
+\echo '=== Q13 : Daily totals with status breakdown ==='
 SELECT
     t.transaction_date,
     COUNT(*)                                              AS total_tx,
@@ -279,21 +293,22 @@ ORDER BY t.transaction_date DESC;
 -- ------------------------------------------------------------
 -- Q14 : Daily totals per transaction type
 -- ------------------------------------------------------------
+\echo '=== Q14 : Daily totals by transaction type ==='
 SELECT
     t.transaction_date,
-    tt.label     AS tx_type,
-    COUNT(*)      AS tx_count,
-    SUM(t.amount) AS volume
-FROM core.transactions  t
-JOIN reference.tx_types tt ON t.transaction_type = tt.code
+    t.transaction_type AS tx_type,
+    COUNT(*)           AS tx_count,
+    SUM(t.amount)      AS volume
+FROM core.transactions t
 WHERE t.status = 'SUCCESS'
-GROUP BY t.transaction_date, tt.label
+GROUP BY t.transaction_date, t.transaction_type
 ORDER BY t.transaction_date DESC, volume DESC;
 
 
 -- ------------------------------------------------------------
 -- Q15 : Weekly summary
 -- ------------------------------------------------------------
+\echo '=== Q15 : Weekly summary ==='
 SELECT
     DATE_TRUNC('week', t.transaction_date) AS week_start,
     COUNT(*)                               AS total_tx,
@@ -308,6 +323,7 @@ ORDER BY week_start DESC;
 -- ------------------------------------------------------------
 -- Q16 : Hourly distribution — peak hours analysis
 -- ------------------------------------------------------------
+\echo '=== Q16 : Hourly distribution ==='
 SELECT
     EXTRACT(HOUR FROM t.transaction_time) AS hour_of_day,
     COUNT(*)                              AS tx_count,
@@ -325,6 +341,7 @@ ORDER BY hour_of_day;
 -- ------------------------------------------------------------
 -- Q17 : Agency transaction volume vs float balance
 -- ------------------------------------------------------------
+\echo '=== Q17 : Agency performance ==='
 SELECT
     ag.code,
     ag.name,
@@ -333,9 +350,9 @@ SELECT
     COUNT(t.id)   AS tx_count,
     SUM(t.amount) AS total_volume,
     ag.float_balance
-FROM core.agencies      ag
-JOIN core.transactions  t  ON t.agency_id   = ag.id
-JOIN reference.wilayas  w  ON ag.wilaya_id  = w.id
+FROM core.agencies     ag
+JOIN core.transactions t  ON t.agency_id   = ag.id
+JOIN reference.wilayas w  ON ag.wilaya_id  = w.id
 WHERE t.status = 'SUCCESS'
 GROUP BY ag.code, ag.name, ag.tier, w.name, ag.float_balance
 ORDER BY total_volume DESC;
@@ -347,10 +364,9 @@ ORDER BY total_volume DESC;
 
 -- ------------------------------------------------------------
 -- Q18 : Balance math inconsistencies in SUCCESS transactions
---        Expected: balance_after = balance_before - amount - fee
---        Tolerance: > 1 MRU to allow rounding differences
---        Target result: 0 rows (clean data)
+--       Target: 0 rows
 -- ------------------------------------------------------------
+\echo '=== Q18 : Balance math check (must be 0 rows) ==='
 SELECT
     t.id,
     t.reference,
@@ -358,8 +374,8 @@ SELECT
     t.fee,
     t.balance_before,
     t.balance_after,
-    (t.balance_before - t.amount - t.fee) AS expected_balance_after,
-    ABS(t.balance_after - (t.balance_before - t.amount - t.fee)) AS discrepancy
+    (t.balance_before - t.amount - t.fee)                          AS expected_balance_after,
+    ABS(t.balance_after - (t.balance_before - t.amount - t.fee))  AS discrepancy
 FROM core.transactions t
 WHERE t.status = 'SUCCESS'
   AND ABS(t.balance_after - (t.balance_before - t.amount - t.fee)) > 1
@@ -368,8 +384,9 @@ ORDER BY discrepancy DESC;
 
 -- ------------------------------------------------------------
 -- Q19 : Duplicate idempotency_key detection
---        Target result: 0 rows (deduplication was done by Go pipeline)
+--       Target: 0 rows
 -- ------------------------------------------------------------
+\echo '=== Q19 : Duplicate idempotency keys (must be 0 rows) ==='
 SELECT
     idempotency_key,
     COUNT(*) AS occurrences
@@ -381,9 +398,9 @@ ORDER BY occurrences DESC;
 
 -- ------------------------------------------------------------
 -- Q20 : FAILED transactions where balance changed
---        A failed transaction must NEVER modify balance
---        Target result: 0 rows
+--       Target: 0 rows
 -- ------------------------------------------------------------
+\echo '=== Q20 : FAILED tx with balance change (must be 0 rows) ==='
 SELECT
     t.id,
     t.reference,
