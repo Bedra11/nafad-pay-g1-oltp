@@ -1,7 +1,6 @@
 # NAFAD PAY — G1 OLTP Pipeline
 
 
-
 ## 1. Présentation du projet
 
 **NAFAD PAY** est un pipeline de données complet construit autour d'un système OLTP de paiement.
@@ -105,12 +104,20 @@ CoreReady --> Core[6. Core Insertion\nDonnées fiables]
 ```
 SI anomalie critique     → ANOMALIES
 SI référence manquante   → QUARANTINE
-SINON                    → CORE
+SINON                    → CORE READY (nettoyage) → CORE
 
 Priorité : ANOMALIES > QUARANTINE > CORE
 ```
 
 Cette priorité garantit qu'aucune ligne n'appartient à deux catégories à la fois.
+
+La couche **Core Ready** joue le rôle d'une zone intermédiaire de préparation avant l'insertion finale dans Core :
+- conversion des types (`TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP`)
+- transformation des valeurs vides en `NULL`
+- standardisation des formats
+- vérification des contraintes métier
+
+Elle garantit qu'aucune erreur de type ou de clé étrangère ne se produit lors de l'insertion finale.
 
 
 
@@ -122,6 +129,21 @@ Toutes les colonnes sont de type `TEXT`.
 Aucune contrainte appliquée.
 Toutes les lignes sont préservées exactement.
 
+### Couche Core Ready (intermédiaire)
+
+Zone de préparation entre Staging et Core :
+
+| Opération | Description |
+|-----------|-------------|
+| Filtrage | Exclusion des anomalies et quarantine |
+| Conversion types | `TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP` |
+| Normalisation | Valeurs vides → `NULL`, formats standardisés |
+| Vérification | Contraintes métier vérifiées avant insertion |
+
+| Table | Lignes préparées |
+|-------|-----------------|
+| `core_ready.transactions` | 66 |
+
 | Table | Lignes chargées |
 |-------|----------------|
 | `staging.users` | 1 000 |
@@ -132,6 +154,21 @@ Toutes les lignes sont préservées exactement.
 | `staging.reference_wilayas` | 15 |
 | `staging.reference_tx_types` | 8 |
 | `staging.reference_categories` | 13 |
+
+### Couche Core Ready (intermédiaire)
+
+Zone de préparation entre le routage et l'insertion finale dans core :
+
+| Opération | Description |
+|-----------|-------------|
+| Conversion types | `TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP` |
+| Valeurs vides | Chaînes vides → `NULL` |
+| Normalisation | Formats standardisés |
+| Vérification | Contraintes métier vérifiées avant insertion |
+
+| Table | Lignes préparées |
+|-------|----------------|
+| `core_ready.transactions` | 66 |
 
 ### Couche Core (stricte)
 
@@ -170,6 +207,18 @@ Les tables core appliquent des contraintes strictes :
 |------|--------|
 | Références manquantes (compte, marchand, agence) | 3 505 |
 
+### Core Ready (zone de préparation)
+
+| Table | Lignes préparées |
+|-------|-----------------|
+| `core_ready.transactions` | 66 |
+
+### Core Ready
+
+| Table | Lignes préparées |
+|-------|----------------|
+| `core_ready.transactions` | 66 |
+
 ### Core
 
 | Table | Lignes insérées |
@@ -191,6 +240,7 @@ Les tables core appliquent des contraintes strictes :
 | Références manquantes dans core | 0  |
 | Violations FK lors de l'insertion | 0  |
 
+---
 
 ## 7. Moteur Go (Automation Engine)
 
@@ -219,7 +269,7 @@ go run eda/cmd/pipeline/main.go
 
 Le pipeline est reproductible : il repart de zéro à chaque exécution grâce au `TRUNCATE` initial.
 
----
+
 
 ## 8. Structure du projet
 
