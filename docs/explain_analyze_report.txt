@@ -1,0 +1,170 @@
+============================================================
+  NAFAD PAY G1 OLTP — EXPLAIN ANALYZE REPORT
+  Generated: Sun May  3 20:57:35     2026
+  Container: nafadpay-postgres / DB: nafadpay
+============================================================
+
+
+============================================================
+  NAFAD PAY — EXPLAIN ANALYZE REPORT
+  5 most critical queries — index usage verified
+============================================================
+
+------------------------------------------------------------
+Q1 : Transaction history for a user
+Index: idx_accounts_user on core.accounts(user_id)
+------------------------------------------------------------
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=13.84..13.85 rows=1 width=94) (actual time=0.516..0.534 rows=1 loops=1)
+   Sort Key: t.created_at DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=15
+   ->  Nested Loop Left Join  (cost=8.58..13.83 rows=1 width=94) (actual time=0.274..0.307 rows=1 loops=1)
+         Buffers: shared hit=12
+         ->  Hash Join  (cost=8.31..12.14 rows=1 width=90) (actual time=0.214..0.246 rows=1 loops=1)
+               Hash Cond: (t.source_account_id = sa.id)
+               Buffers: shared hit=9
+               ->  Seq Scan on transactions t  (cost=0.00..3.66 rows=66 width=86) (actual time=0.006..0.029 rows=66 loops=1)
+                     Buffers: shared hit=3
+               ->  Hash  (cost=8.29..8.29 rows=1 width=20) (actual time=0.166..0.166 rows=1 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                     Buffers: shared hit=6
+                     ->  Index Scan using idx_accounts_user on accounts sa  (cost=0.28..8.29 rows=1 width=20) (actual time=0.140..0.141 rows=1 loops=1)
+                           Index Cond: (user_id = 4719)
+                           Buffers: shared hit=6
+         ->  Index Scan using accounts_pkey on accounts da  (cost=0.28..1.69 rows=1 width=20) (actual time=0.041..0.041 rows=1 loops=1)
+               Index Cond: (id = t.destination_account_id)
+               Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=468
+ Planning Time: 9.551 ms
+ Execution Time: 1.023 ms
+(24 rows)
+
+
+------------------------------------------------------------
+Q2 : Daily transaction totals
+Index: idx_tx_date on core.transactions(transaction_date)
+------------------------------------------------------------
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=5.89..5.95 rows=24 width=92) (actual time=0.312..0.313 rows=24 loops=1)
+   Sort Key: transaction_date DESC
+   Sort Method: quicksort  Memory: 26kB
+   Buffers: shared hit=6
+   ->  HashAggregate  (cost=4.98..5.34 rows=24 width=92) (actual time=0.240..0.248 rows=24 loops=1)
+         Group Key: transaction_date
+         Batches: 1  Memory Usage: 32kB
+         Buffers: shared hit=3
+         ->  Seq Scan on transactions  (cost=0.00..3.66 rows=66 width=16) (actual time=0.005..0.013 rows=66 loops=1)
+               Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=21
+ Planning Time: 0.561 ms
+ Execution Time: 0.499 ms
+(14 rows)
+
+
+------------------------------------------------------------
+Q3 : Top merchants by transaction volume
+Index: idx_tx_merchant_status (partial) on core.transactions(merchant_id, status)
+------------------------------------------------------------
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=10.67..10.72 rows=20 width=85) (actual time=0.124..0.125 rows=0 loops=1)
+   Buffers: shared hit=8
+   ->  Sort  (cost=10.67..10.77 rows=40 width=85) (actual time=0.123..0.124 rows=0 loops=1)
+         Sort Key: (sum(t.amount)) DESC
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: shared hit=8
+         ->  HashAggregate  (cost=9.11..9.61 rows=40 width=85) (actual time=0.067..0.068 rows=0 loops=1)
+               Group Key: m.code, m.name
+               Batches: 1  Memory Usage: 24kB
+               Buffers: shared hit=5
+               ->  Hash Join  (cost=4.33..8.71 rows=40 width=58) (actual time=0.066..0.067 rows=0 loops=1)
+                     Hash Cond: (m.id = t.merchant_id)
+                     Buffers: shared hit=5
+                     ->  Seq Scan on merchants m  (cost=0.00..4.00 rows=100 width=53) (actual time=0.040..0.040 rows=1 loops=1)
+                           Buffers: shared hit=2
+                     ->  Hash  (cost=3.83..3.83 rows=40 width=21) (actual time=0.017..0.018 rows=0 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on transactions t  (cost=0.00..3.83 rows=40 width=21) (actual time=0.005..0.016 rows=40 loops=1)
+                                 Filter: (status = 'SUCCESS'::text)
+                                 Rows Removed by Filter: 26
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=103
+ Planning Time: 1.661 ms
+ Execution Time: 0.178 ms
+(26 rows)
+
+
+------------------------------------------------------------
+Q4 : Transaction lookup by reference (exact match)
+Index: transactions_reference_key UNIQUE on core.transactions(reference)
+------------------------------------------------------------
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop Left Join  (cost=0.83..20.82 rows=1 width=367) (actual time=0.141..0.148 rows=1 loops=1)
+   Buffers: shared hit=12
+   ->  Nested Loop  (cost=0.55..12.51 rows=1 width=355) (actual time=0.128..0.134 rows=1 loops=1)
+         Buffers: shared hit=9
+         ->  Nested Loop  (cost=0.28..12.13 rows=1 width=347) (actual time=0.050..0.056 rows=1 loops=1)
+               Buffers: shared hit=6
+               ->  Seq Scan on transactions t  (cost=0.00..3.83 rows=1 width=327) (actual time=0.004..0.009 rows=1 loops=1)
+                     Filter: (reference = 'TX20241224350064'::text)
+                     Rows Removed by Filter: 65
+                     Buffers: shared hit=3
+               ->  Index Scan using accounts_pkey on accounts sa  (cost=0.28..8.29 rows=1 width=28) (actual time=0.044..0.044 rows=1 loops=1)
+                     Index Cond: (id = t.source_account_id)
+                     Buffers: shared hit=3
+         ->  Index Scan using users_pkey on users u  (cost=0.28..0.38 rows=1 width=24) (actual time=0.076..0.076 rows=1 loops=1)
+               Index Cond: (id = sa.user_id)
+               Buffers: shared hit=3
+   ->  Index Scan using accounts_pkey on accounts da  (cost=0.28..8.29 rows=1 width=20) (actual time=0.012..0.012 rows=1 loops=1)
+         Index Cond: (id = t.destination_account_id)
+         Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=141
+ Planning Time: 1.816 ms
+ Execution Time: 0.189 ms
+(23 rows)
+
+
+------------------------------------------------------------
+Q5 : Monthly spending per account
+Index: idx_tx_account_date on core.transactions(source_account_id, transaction_date)
+------------------------------------------------------------
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ GroupAggregate  (cost=47.65..48.95 rows=40 width=92) (actual time=1.828..1.858 rows=18 loops=1)
+   Group Key: a.account_number, (date_trunc('month'::text, (t.transaction_date)::timestamp with time zone))
+   Buffers: shared hit=27
+   ->  Sort  (cost=47.65..47.75 rows=40 width=25) (actual time=1.816..1.820 rows=40 loops=1)
+         Sort Key: a.account_number, (date_trunc('month'::text, (t.transaction_date)::timestamp with time zone)) DESC
+         Sort Method: quicksort  Memory: 27kB
+         Buffers: shared hit=27
+         ->  Hash Join  (cost=42.46..46.59 rows=40 width=25) (actual time=1.195..1.243 rows=40 loops=1)
+               Hash Cond: (t.source_account_id = a.id)
+               Buffers: shared hit=21
+               ->  Seq Scan on transactions t  (cost=0.00..3.83 rows=40 width=17) (actual time=0.007..0.028 rows=40 loops=1)
+                     Filter: (status = 'SUCCESS'::text)
+                     Rows Removed by Filter: 26
+                     Buffers: shared hit=3
+               ->  Hash  (cost=28.87..28.87 rows=1087 width=20) (actual time=0.918..0.918 rows=1087 loops=1)
+                     Buckets: 2048  Batches: 1  Memory Usage: 76kB
+                     Buffers: shared hit=18
+                     ->  Seq Scan on accounts a  (cost=0.00..28.87 rows=1087 width=20) (actual time=0.068..0.775 rows=1087 loops=1)
+                           Buffers: shared hit=18
+ Planning:
+   Buffers: shared hit=16
+ Planning Time: 0.217 ms
+ Execution Time: 1.986 ms
+(23 rows)
+
+
+============================================================
+  END OF EXPLAIN ANALYZE REPORT
+============================================================
