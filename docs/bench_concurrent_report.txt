@@ -1,0 +1,78 @@
+============================================================
+  NAFAD PAY G1 OLTP — CONCURRENT INSERTION BENCH
+  Generated: Sun May  3 21:12:03     2026
+  Workers: 10 | Inserts per worker: 1000
+  Total target: 10000 rows
+============================================================
+
+[1/4] Setting up bench table...
+CREATE SCHEMA
+NOTICE:  table "transactions" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+      bench.transactions created.
+
+[2/4] Launching 10 parallel workers...
+Worker 4 done — errors: 0
+Worker 9 done — errors: 0
+Worker 8 done — errors: 0
+Worker 10 done — errors: 0
+Worker 1 done — errors: 0
+Worker 5 done — errors: 0
+Worker 7 done — errors: 0
+Worker 2 done — errors: 0
+Worker 3 done — errors: 0
+Worker 6 done — errors: 0
+
+[3/4] All workers finished in 547s
+      Total inserts attempted : 10000
+      Elapsed time            : 547s
+      Throughput (TPS)        : ~18 transactions/second
+
+[4/4] Verifying results and constraints...
+
+--- Total rows inserted ---
+ total_rows_inserted 
+---------------------
+               10000
+(1 row)
+
+
+--- Rows per worker ---
+ worker_id | rows_inserted | duration_seconds 
+-----------+---------------+------------------
+         1 |          1000 |       545.965103
+         2 |          1000 |       546.202513
+         3 |          1000 |       546.624610
+         4 |          1000 |       543.884096
+         5 |          1000 |       545.915019
+         6 |          1000 |       547.143580
+         7 |          1000 |       546.090566
+         8 |          1000 |       544.736665
+         9 |          1000 |       544.458138
+        10 |          1000 |       545.293613
+(10 rows)
+
+
+--- Duplicate idempotency_key check (must be 0) ---
+ duplicates 
+------------
+          0
+(1 row)
+
+
+--- Constraint violations check (must be 0) ---
+ bad_amount | bad_balance 
+------------+-------------
+          0 |           0
+(1 row)
+
+
+--- Cleaning up bench schema ---
+DROP TABLE
+DROP SCHEMA
+      bench schema dropped.
+
+============================================================
+  Bench complete. Report saved to: docs/bench_concurrent_report.txt
+============================================================
