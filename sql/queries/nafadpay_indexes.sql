@@ -53,9 +53,18 @@ CREATE INDEX IF NOT EXISTS idx_tx_account_date
 CREATE INDEX IF NOT EXISTS idx_tx_status_date
     ON core.transactions(status, transaction_date);
 
--- Composite: merchant + status — merchant volume queries (Q9)
-CREATE INDEX IF NOT EXISTS idx_tx_merchant_status
-    ON core.transactions(merchant_id, status);
+-- Composite: merchant + status — PARTIAL index (merchant_id IS NOT NULL)
+-- Avoids indexing P2P transfers where merchant_id is NULL (majority of rows)
+-- README spec: partial WHERE merchant_id IS NOT NULL
+DROP INDEX IF EXISTS core.idx_tx_merchant_status;
+CREATE INDEX idx_tx_merchant_status
+    ON core.transactions(merchant_id, status)
+    WHERE merchant_id IS NOT NULL;
+
+-- Composite: node + sequence — reconciliation queries (clock-skew, sequence gaps)
+-- README spec: (node_id, sequence_number) ordonnancement par nœud
+CREATE INDEX IF NOT EXISTS idx_tx_node_sequence
+    ON core.transactions(node_id, sequence_number);
 
 
 -- ============================================================
@@ -118,7 +127,6 @@ ORDER BY tablename, indexname;
 
 -- ============================================================
 -- EXPLAIN ANALYZE — run these to prove index usage
--- Copy results as screenshots for presentation
 -- ============================================================
 
 -- Q1 check — expects: Index Scan on idx_accounts_user + idx_tx_source_account
@@ -153,14 +161,14 @@ GROUP BY m.name
 ORDER BY SUM(t.amount) DESC
 LIMIT 20;
 
--- Q2 — compte + date range
+-- Q2 — account + date range
 EXPLAIN ANALYZE
 SELECT t.id, t.amount FROM core.transactions t
 JOIN core.accounts sa ON t.source_account_id = sa.id
 WHERE sa.user_id = 1
   AND t.transaction_date BETWEEN '2024-01-01' AND '2024-12-31';
 
--- Q8 — dépenses mensuelles
+-- Q8 — monthly spend
 EXPLAIN ANALYZE
 SELECT a.account_number, DATE_TRUNC('month', t.transaction_date), SUM(t.amount)
 FROM core.transactions t
@@ -168,9 +176,9 @@ JOIN core.accounts a ON t.source_account_id = a.id
 WHERE t.status = 'SUCCESS'
 GROUP BY a.account_number, DATE_TRUNC('month', t.transaction_date);
 
+
 -- ============================================================
 -- TABLE + INDEX SIZE MONITORING
--- Run this to show storage impact in presentation
 -- ============================================================
 SELECT
     relname                                              AS table_name,
