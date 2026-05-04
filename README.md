@@ -1,9 +1,10 @@
 # NAFAD PAY — G1 OLTP Pipeline
 
 
+
 ## 1. Présentation du projet
 
-**NAFAD PAY** est un pipeline de données complet construit autour d'un système OLTP de paiement.
+**NAFAD PAY** est un pipeline de données complet construit autour d'un système OLTP de paiement mobile mauritanien.
 
 L'objectif du projet est de concevoir et implémenter une architecture de traitement de données en couches, depuis l'ingestion brute jusqu'au stockage fiable et interrogeable.
 
@@ -17,8 +18,8 @@ Le système prend en entrée des données brutes issues de fichiers CSV (utilisa
 
 Ce projet combine :
 
-- PostgreSQL (base de données relationnelle)
-- Go (moteur d'automatisation du pipeline)
+- PostgreSQL 16 (base de données relationnelle)
+- Go (moteur d'automatisation du pipeline — 12 étapes)
 - Docker (environnement reproductible)
 - Terraform (infrastructure as code)
 - AWS EC2 + RDS (déploiement cloud)
@@ -42,16 +43,16 @@ Chaque couche a un rôle précis et ne mélange pas les responsabilités :
 ```mermaid
 flowchart LR
 
-CSV[Fichiers CSV] --> Staging[Staging Layer]
+CSV[Fichiers CSV\nG1_OLTP/] --> Staging[Staging Layer\nTEXT-only permissif]
 
-Staging --> Go[Go Validation Engine]
+Staging --> Go[Go Validation Engine\n12 étapes]
 
-Go --> Core[CORE\nDonnées valides]
-Go --> Quarantine[QUARANTINE\nRéférences manquantes]
-Go --> Anomalies[ANOMALIES\nErreurs critiques]
+Go --> Core[CORE\n66 transactions valides]
+Go --> Quarantine[QUARANTINE\n3 505 références manquantes]
+Go --> Anomalies[ANOMALIES\n52 erreurs · 6 416 idempotency]
 
-Core --> Queries[Requêtes analytiques]
-Queries --> AWS[AWS EC2]
+Core --> Queries[20 Requêtes analytiques\n27 index]
+Queries --> AWS[AWS EC2\neu-west-3]
 ```
 
 
@@ -61,88 +62,66 @@ Queries --> AWS[AWS EC2]
 ```mermaid
 flowchart LR
 
-User --> EC2
+Dev[Développeur] -->|SSH| EC2
 
-subgraph AWS
-    EC2[EC2 Instance\nt3.medium]
-    PG[PostgreSQL\nDocker :5432]
-    RDS[AWS RDS
-PostgreSQL]
+subgraph AWS [AWS eu-west-3]
+    EC2[EC2 Instance\nt3.medium\nUbuntu 22.04]
+    PG[PostgreSQL 16\nDocker :5433]
+    TF[Terraform\nInfrastructure as Code]
 end
 
 EC2 --> PG
-PG --> RDS
+TF -.->|Provisionne| EC2
 ```
 
-Les données sont stockées sur AWS RDS (PostgreSQL managé).
-PostgreSQL tourne dans un conteneur Docker sur l'instance EC2.
+L'instance EC2 est provisionnée via Terraform. PostgreSQL tourne dans un conteneur Docker sur l'instance EC2.
 
 
 
 ## 4. Pipeline de données
 
-Le pipeline s'exécute en 6 étapes séquentielles orchestrées par Go.
+Le pipeline Go s'exécute en **12 étapes** séquentielles dans le bon ordre de dépendance FK.
 
 ```mermaid
-flowchart LR
+flowchart TD
 
-Raw[CSV Bruts] --> Staging[1. Staging\nChargement permissif]
-
-Staging --> Anomalies[2. Détection\nAnomalies]
-Staging --> Quarantine[3. Quarantine\nRéférences manquantes]
-
-Anomalies --> CoreLoad[4. Core Load\nParent tables]
-Quarantine --> CoreLoad
-
-CoreLoad --> CoreReady[5. Core Ready\nNettoyage et normalisation]
-
-CoreReady --> Core[6. Core Insertion\nDonnées fiables]
+S1[1. DDL — Schémas et tables] --> S2
+S2[2. Reset — TRUNCATE complet] --> S3
+S3[3. Référence — wilayas · tx_types · categories] --> S4
+S4[4. Anomalies — doublons · invariants] --> S5
+S5[5. Quarantaine staging — orphelins] --> S6
+S6[6. Core Load — users · accounts · merchants · agencies] --> S7
+S7[7. Quarantaine 2 — orphelins core] --> S8
+S8[8. Raisons — catalogue quarantine_reasons] --> S9
+S9[9. Transactions — insertion core] --> S10
+S10[10. Noms marchands — correction undefined] --> S11
+S11[11. Index — 27 index dont 1 partiel] --> S12
+S12[12. Résumé — vérification finale]
 ```
 
 ### Règles de routage
 
 ```
-SI anomalie critique     → ANOMALIES
-SI référence manquante   → QUARANTINE
-SINON                    → CORE READY (nettoyage) → CORE
+SI montant ≤ 0                     → ANOMALIES
+SI idempotency_key dupliquée        → ANOMALIES
+SI référence manquante (staging)    → QUARANTINE
+SI référence manquante (core)       → QUARANTINE
+SINON                               → CORE
 
 Priorité : ANOMALIES > QUARANTINE > CORE
 ```
 
 Cette priorité garantit qu'aucune ligne n'appartient à deux catégories à la fois.
 
-La couche **Core Ready** joue le rôle d'une zone intermédiaire de préparation avant l'insertion finale dans Core :
-- conversion des types (`TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP`)
-- transformation des valeurs vides en `NULL`
-- standardisation des formats
-- vérification des contraintes métier
-
-Elle garantit qu'aucune erreur de type ou de clé étrangère ne se produit lors de l'insertion finale.
-
 
 
 ## 5. Schéma de base de données
 
+La base est organisée en **6 schémas** avec des responsabilités claires.
+
 ### Couche Staging (permissive)
 
-Toutes les colonnes sont de type `TEXT`.
-Aucune contrainte appliquée.
-Toutes les lignes sont préservées exactement.
-
-### Couche Core Ready (intermédiaire)
-
-Zone de préparation entre Staging et Core :
-
-| Opération | Description |
-|-----------|-------------|
-| Filtrage | Exclusion des anomalies et quarantine |
-| Conversion types | `TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP` |
-| Normalisation | Valeurs vides → `NULL`, formats standardisés |
-| Vérification | Contraintes métier vérifiées avant insertion |
-
-| Table | Lignes préparées |
-|-------|-----------------|
-| `core_ready.transactions` | 66 |
+Toutes les colonnes sont de type `TEXT`. Aucune contrainte appliquée. Toutes les lignes sont préservées exactement.
 
 | Table | Lignes chargées |
 |-------|----------------|
@@ -155,24 +134,7 @@ Zone de préparation entre Staging et Core :
 | `staging.reference_tx_types` | 8 |
 | `staging.reference_categories` | 13 |
 
-### Couche Core Ready (intermédiaire)
-
-Zone de préparation entre le routage et l'insertion finale dans core :
-
-| Opération | Description |
-|-----------|-------------|
-| Conversion types | `TEXT` → `NUMERIC`, `DATE`, `TIMESTAMP` |
-| Valeurs vides | Chaînes vides → `NULL` |
-| Normalisation | Formats standardisés |
-| Vérification | Contraintes métier vérifiées avant insertion |
-
-| Table | Lignes préparées |
-|-------|----------------|
-| `core_ready.transactions` | 66 |
-
 ### Couche Core (stricte)
-
-Les tables core appliquent des contraintes strictes :
 
 | Table | Contraintes principales |
 |-------|------------------------|
@@ -190,6 +152,11 @@ Les tables core appliquent des contraintes strictes :
 | `reference.tx_types` | 8 types de transaction |
 | `reference.categories` | 13 catégories marchands |
 
+### Diagramme relationnel complet
+
+<img width="970" height="1713" alt="core_relational_schema" src="https://github.com/user-attachments/assets/3b8010f0-2f55-4ee2-ac5e-09d721f16708" />
+
+
 
 
 ## 6. Validation et résultats
@@ -198,124 +165,136 @@ Les tables core appliquent des contraintes strictes :
 
 | Type | Nombre |
 |------|--------|
-| Transactions avec montant ≤ 0 | 52 |
-| Conflits d'idempotency (clé dupliquée + payload différent) | 6 416 |
+| `invalid_amount` (montant ≤ 0) | 5 |
+| `invalid_failed_balance` | 28 |
+| `negative_balance` | 19 |
+| **Total transaction_anomalies** | **52** |
+| Conflits d'idempotency | 6 416 |
 
 ### Quarantine
 
 | Type | Nombre |
 |------|--------|
-| Références manquantes (compte, marchand, agence) | 3 505 |
+| `missing_source_account` | 579 |
+| `missing_destination_account` | 2 925 |
+| `missing_core_reference` | 1 |
+| **Total quarantine** | **3 505** |
+| `quarantine_reasons` (catalogue) | 7 codes |
 
-### Core Ready (zone de préparation)
+### Core (données fiables)
 
-| Table | Lignes préparées |
-|-------|-----------------|
-| `core_ready.transactions` | 66 |
-
-### Core Ready
-
-| Table | Lignes préparées |
-|-------|----------------|
-| `core_ready.transactions` | 66 |
-
-### Core
-
-| Table | Lignes insérées |
-|-------|----------------|
+| Table | Lignes |
+|-------|--------|
 | `core.users` | 995 |
 | `core.accounts` | 1 087 |
 | `core.merchants` | 100 |
 | `core.agencies` | 50 |
 | `core.transactions` | 66 (40 SUCCESS · 26 FAILED) |
 
-### Vérifications de non-chevauchement
+### Pipeline routing summary
 
-| Vérification | Résultat |
-|-------------|---------|
-| Overlap anomalies / quarantine | 0  |
-| Overlap idempotency / quarantine | 0  |
-| Montants invalides dans core | 0  |
-| Balances invalides dans core | 0  |
-| Références manquantes dans core | 0  |
+| Couche | Lignes | % du brut |
+|--------|--------|-----------|
+| `staging.transactions` | 10 000 | 100% |
+| `anomalies.idempotency_conflicts` | 6 416 | 64.16% |
+| `anomalies.transaction_anomalies` | 52 | 0.52% |
+| `quarantine.quarantine_transactions` | 3 505 | 35.05% |
+| **`core.transactions`** | **66** | **0.66%** |
+
+### Vérifications — toutes passées 
+
+| Check | Résultat |
+|-------|---------|
+| Doublons idempotency_key dans core | 0  |
+| FAILED tx avec changement de solde | 0  |
+| Montants négatifs dans core | 0  |
+| Soldes négatifs dans core | 0  |
 | Violations FK lors de l'insertion | 0  |
+| Overlap anomalies / quarantine | 0  |
+| Noms marchands avec préfixe `undefined` | 0  |
+| Pipeline idempotent (relançable sans erreur) |  |
 
----
+
 
 ## 7. Moteur Go (Automation Engine)
 
-Go est le moteur central du pipeline. Il orchestre toutes les étapes dans le bon ordre.
-
-```mermaid
-flowchart TD
-
-Start[go run cmd/pipeline/main.go]
-
-Start --> Truncate[Reset toutes les tables]
-Truncate --> Anomaly[Détection anomalies]
-Anomaly --> Idempotency[Détection conflits idempotency]
-Idempotency --> QuarantineStaging[Quarantine staging]
-QuarantineStaging --> CoreLoad[Chargement core parents]
-CoreLoad --> QuarantineCore[Quarantine références core]
-QuarantineCore --> CoreReady[Préparation core_ready]
-CoreReady --> CoreInsert[Insertion core finale]
-```
-
-### Commande d'exécution
+Go orchestre les 12 étapes du pipeline dans le bon ordre de dépendance FK.
 
 ```bash
 go run eda/cmd/pipeline/main.go
 ```
 
-Le pipeline est reproductible : il repart de zéro à chaque exécution grâce au `TRUNCATE` initial.
+| Étape | Description | Résultat |
+|-------|-------------|---------|
+| 1 — DDL | Création des schémas et tables | Tables créées |
+| 2 — Reset | TRUNCATE de toutes les tables y compris `reference.*` | Base propre |
+| 3 — Référence | Chargement wilayas / tx_types / categories | 15 + 8 + 13 |
+| 4 — Anomalies | Détection doublons et violations invariants | 52 + 6 416 |
+| 5 — Quarantaine | Isolation orphelins staging | 3 505 |
+| 6 — Core load | users → accounts → merchants → agencies | 995/1087/100/50 |
+| 7 — Quarantaine 2 | Isolation orphelins core | 1 |
+| 8 — Raisons | Catalogue `quarantine_reasons` | 7 codes |
+| 9 — Transactions | Insertion `core.transactions` | 66 |
+| 10 — Marchands | Correction préfixe `undefined` | 100 corrigés |
+| 11 — Index | 27 index dont 1 partiel | 27 créés |
+| 12 — Résumé | Vérification finale |  |
+
+Durée totale observée : **~9 secondes**
 
 
 
-## 8. Structure du projet
+## 8. Performance et indexation
+
+**27 index** créés sur les tables core pour optimiser les 20 requêtes analytiques.
+
+| Table | Index | Type |
+|-------|-------|------|
+| `core.transactions` | `idx_tx_source_account`, `idx_tx_destination_account`, `idx_tx_merchant`, `idx_tx_agency`, `idx_tx_date`, `idx_tx_status` | Simples |
+| `core.transactions` | `idx_tx_account_date`, `idx_tx_status_date` | Composites |
+| `core.transactions` | `idx_tx_merchant_status` | **Partiel** `WHERE merchant_id IS NOT NULL` |
+| `core.transactions` | `idx_tx_node_sequence` | Composite node/sequence |
+| `core.accounts` | `idx_accounts_user`, `idx_accounts_status` | Simples |
+| `core.users` | `idx_users_wilaya` | Simple |
+| `core.merchants` | `idx_merchants_wilaya`, `idx_merchants_category` | Simples |
+| `core.agencies` | `idx_agencies_wilaya` | Simple |
+
+**Résultats EXPLAIN ANALYZE :**
+
+| Requête | Plan | Temps |
+|---------|------|-------|
+| Q1 — historique utilisateur | Index Scan `idx_accounts_user` | 0.174ms  |
+| Q4 — lookup par référence | Index Scan `transactions_reference_key` | < 0.1ms  |
+| Q5 — dépenses mensuelles | Index Scan `idx_tx_account_date` | < 0.35ms  |
+| Q13 — totaux quotidiens | Seq Scan (normal sur 66 lignes) | 0.240ms  |
+
+**Bench concurrent :**
+
+| Métrique | Résultat |
+|----------|---------|
+| Workers | 10 parallèles |
+| Total inserts | 10 000 / 10 000  |
+| Violations `UNIQUE` idempotency | 0  |
+| Violations CHECK | 0  |
+| Deadlocks | 0  |
+
+
+
+## 9. Structure du projet
 
 ```plaintext
-nafadpay-g1-oltp/
+nafad-pay-g1-oltp/
 │
 ├── sql/
-│   ├── reference/
-│   │   └── 01_reference_schema.sql
-│   ├── staging/
-│   │   ├── 00_staging_schema.sql
-│   │   ├── 01_stg_users.sql
-│   │   ├── 02_stg_accounts.sql
-│   │   ├── 03_stg_merchants.sql
-│   │   ├── 04_stg_agencies.sql
-│   │   ├── 05_stg_transactions.sql
-│   │   ├── 06_stg_reference_wilayas.sql
-│   │   ├── 07_stg_reference_tx_types.sql
-│   │   └── 08_stg_reference_categories.sql
-│   ├── core/
-│   │   ├── 01_core_users.sql
-│   │   ├── 02_core_accounts.sql
-│   │   ├── 03_core_transactions.sql
-│   │   ├── 04_core_merchants.sql
-│   │   └── 05_core_agencies.sql
-│   ├── anomalies/
-│   │   ├── 01_transaction_anomalies.sql
-│   │   ├── 02_idempotency_conflicts.sql
-│   │   ├── 03_detect_transaction_anomalies.sql
-│   │   ├── 04_detect_idempotency_conflicts.sql
-│   │   ├── 05_insert_transaction_anomalies.sql
-│   │   └── 06_insert_idempotency_conflicts.sql
-│   ├── quarantine/
-│   │   ├── 01_quarantine_transactions.sql
-│   │   ├── 02_quarantine_reasons.sql
-│   │   ├── 03_detect_quarantine_transactions.sql
-│   │   ├── 04_insert_quarantine_transactions.sql
-│   │   └── 05_insert_core_reference_quarantine.sql
-│   ├── core_load/
-│   │   ├── 01_insert_core_users.sql
-│   │   ├── 02_insert_core_accounts.sql
-│   │   ├── 03_insert_core_merchants.sql
-│   │   └── 04_insert_core_agencies.sql
-│   ├── core_ready/
-│   │   ├── 01_prepare_core_transactions.sql
-│   │   └── 02_insert_core_transactions.sql
+│   ├── reference/         ← Tables de référence
+│   ├── staging/           ← Tables TEXT-only permissives
+│   ├── core/              ← Tables strictes avec contraintes
+│   ├── anomalies/         ← Détection et insertion anomalies
+│   ├── quarantine/        ← Détection et insertion quarantine
+│   ├── core_load/         ← Chargement tables parents core
+│   ├── queries/
+│   │   ├── nafadpay_queries.sql          ← 20 requêtes analytiques
+│   │   ├── nafadpay_indexes.sql          ← 27 index
+│   │   └── nafadpay_validate_pipeline.sql ← 7 checks validation
 │   └── tests/
 │       ├── 00_staging_smoke_test.sql
 │       └── 01_validation_routing_checks.sql
@@ -323,70 +302,60 @@ nafadpay-g1-oltp/
 ├── eda/
 │   └── cmd/
 │       └── pipeline/
-│           └── main.go
+│           └── main.go    ← Pipeline Go 12 étapes
 │
 ├── docker/
 │   └── docker-compose.yml
 │
 ├── scripts/
-│   ├── bootstrap.sh
-│   ├── bootstrap.ps1
-│   ├── init_staging.sh
-│   ├── init_staging.ps1
-│   ├── load_reference.sh
-│   ├── load_reference.ps1
-│   ├── load_raw.sh
-│   ├── load_raw.ps1
-│   ├── run_validation_route.sh
-│   └── run_validation_route.ps1
+│   ├── bootstrap.sh / bootstrap.ps1
+│   ├── run_all.sh                        ← Lance tout en une commande
+│   ├── run_explain_analyze.sh
+│   ├── bench_concurrent_insert.sh
+│   ├── load_reference.sh / .ps1
+│   └── load_raw.sh / .ps1
 │
 ├── terraform/
 │   ├── main.tf
 │   ├── variables.tf
-│   └── outputs.tf
+│   ├── outputs.tf
+│   └── terraform.tfvars.example
 │
 ├── docs/
-│   ├── anomaly_pipeline.md
-│   ├── early_stage.md
-│   └── at_scale.md
+│   ├── early_stage.md                    ← Architecture Early Stage
+│   ├── at_scale.md                       ← Architecture At Scale
+│   ├── explain_analyze_report.txt        ← Résultats EXPLAIN ANALYZE
+│   ├── bench_concurrent_report.txt       ← Résultats bench concurrent
+│   └── perf_tests_report.md             ← Analyse complète tests
 │
 ├── data/
-│   ├── shared/
-│   │   ├── reference_wilayas.csv
-│   │   ├── reference_tx_types.csv
-│   │   └── reference_categories.csv
-│   └── G1_OLTP/
-│       ├── users_sample.csv
-│       ├── accounts_sample.csv
-│       ├── merchants_sample.csv
-│       ├── agencies_sample.csv
-│       └── transactions_sample.csv
+│   ├── shared/            ← CSV de référence
+│   └── G1_OLTP/           ← CSV bruts (non commités)
 │
-├── validation_route.sql
-├── .env
 ├── .gitignore
 └── README.md
 ```
 
 
 
-## 9. Structure Git
+## 10. Structure Git
 
-Le projet utilise une organisation en branches par fonctionnalité :
+Le projet utilise une organisation en branches par fonctionnalité.
 
-- `main` : branche principale, production
-- `feature/core-schema` : schéma core initial
-- `feature/core-users` : table et contraintes users
-- `feature/core-accounts` : table et contraintes accounts
-- `feature/core-merchants` : table et contraintes merchants
-- `feature/core-agencies` : table et contraintes agencies
-- `feature/core-transactions` : table et contraintes transactions
-- `feat/staging-schema` : création des tables staging
-- `feat/staging-docker` : setup Docker et scripts de chargement
-- `feature/update-core-accounts-fields` : mise à jour des champs core accounts
-- `feature/quarantine-anomalies` : implémentation anomalies et quarantine
-
-Chaque fonctionnalité est développée sur une branche dédiée, puis mergée vers `main` via Pull Request.
+| Branche | Responsable | Contenu |
+|---------|-------------|---------|
+| `main` | — | Production, branche principale |
+| `feature/core-schema` | Membre 1 | Schéma core initial |
+| `feature/core-users` | Membre 1 | Table et contraintes users |
+| `feature/core-accounts` | Membre 1 | Table et contraintes accounts |
+| `feature/core-merchants` | Membre 1 | Table et contraintes merchants |
+| `feature/core-agencies` | Membre 1 | Table et contraintes agencies |
+| `feature/core-transactions` | Membre 1 | Table et contraintes transactions |
+| `feat/staging-schema` | Membre 2 | Création des tables staging |
+| `feat/staging-docker` | Membre 2 | Setup Docker et scripts bootstrap |
+| `feature/update-core-accounts-fields` | Membre 1 | Mise à jour champs core accounts |
+| `feature/quarantine-anomalies` | Membre 3 | Anomalies, quarantine, pipeline Go |
+| **`feature/documentation-architecture`** | **Membre 5** | **README, early_stage, at_scale, Terraform** |
 
 ```mermaid
 flowchart LR
@@ -401,11 +370,12 @@ stg1[feat/staging-schema] --> main
 stg2[feat/staging-docker] --> main
 upd[feature/update-core-accounts-fields] --> main
 qa[feature/quarantine-anomalies] --> main
+doc[feature/documentation-architecture] --> main
 ```
 
 
 
-## 10. Variables d'environnement
+## 11. Variables d'environnement
 
 Les variables sensibles ne sont jamais committées dans le code.
 
@@ -420,119 +390,176 @@ AWS_SECRET_ACCESS_KEY=xxx
 AWS_DEFAULT_REGION=eu-west-3
 ```
 
-Le `.gitignore` doit contenir :
-
-```
-.env
-*.pem
-data/G1_OLTP/
-```
 
 
-
-## 11. Installation et exécution
+## 12. Installation et exécution
 
 ### Prérequis
 
-- Docker + Docker Compose
-- Go 1.21+
-- PostgreSQL client (`psql`)
-- AWS CLI configuré
+- Docker Desktop installé et en cours d'exécution
+- Git installé
+- Go 1.21+ installé
+- Aucun PostgreSQL local requis
 
-### Cloner le projet
 
-```bash
-git clone <repo_url>
-cd nafadpay-g1-oltp
-```
 
-### Lancer le bootstrap complet
+### Étape 1 — Cloner le projet
 
 ```bash
-# Linux / EC2
-bash scripts/bootstrap.sh
-
-# Windows
-.\scripts\bootstrap.ps1
-```
-
-Le bootstrap :
-
-- démarre PostgreSQL dans Docker
-- attend que la base soit prête
-- crée le schéma staging
-- charge les données de référence
-- charge les données brutes G1
-
-### Vérifier le chargement (smoke test)
-
-```bash
-# Linux
-Get-Content sql/tests/00_staging_smoke_test.sql -Raw | \
-  docker exec -i nafadpay-postgres psql -U admin -d nafadpay -f -
-```
-
-### Lancer le pipeline de validation
-
-```bash
-# Linux
-bash scripts/run_validation_route.sh
-
-# Windows
-.\scripts\run_validation_route.ps1
-```
-
-### Lancer le pipeline Go complet
-
-```bash
-go run eda/cmd/pipeline/main.go
-```
-
-### Lancer les tests de validation
-
-```bash
-Get-Content sql/tests/01_validation_routing_checks.sql -Raw | \
-  docker exec -i nafadpay-postgres psql -U admin -d nafadpay -f -
+git clone https://github.com/Bedra11/nafad-pay-g1-oltp.git
+cd nafad-pay-g1-oltp
 ```
 
 
 
-## 12. Déploiement sur AWS EC2
-
-### Connexion à l'instance
-
-```bash
-ssh ubuntu@<EC2_PUBLIC_IP>
-```
-
-### Lancer PostgreSQL sur EC2
-
-```bash
-cd nafadpay-g1-oltp
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-### Exécuter le pipeline sur EC2
+### Étape 2 — Démarrer la base et charger les données
 
 ```bash
 bash scripts/bootstrap.sh
-go run eda/cmd/pipeline/main.go
 ```
 
-### Accès à la base
+Résultat attendu :
+
+```
+staging.transactions         → 10000
+staging.users                → 1000
+staging.accounts             → 1099
+staging.merchants            → 100
+staging.agencies             → 50
+staging.reference_wilayas    → 15
+staging.reference_tx_types   → 8
+staging.reference_categories → 13
+```
+
+
+
+### Étape 3 — Lancer le pipeline complet et toutes les requêtes
 
 ```bash
-docker exec -it nafadpay-postgres psql -U admin -d nafadpay
+bash scripts/run_all.sh
+```
+
+Résultat attendu :
+
+```
+anomalies.idempotency_conflicts    → 6416
+anomalies.transaction_anomalies    → 52
+quarantine.quarantine_transactions → 3505
+core.users                         → 995
+core.accounts                      → 1087
+core.merchants                     → 100
+core.agencies                      → 50
+core.transactions                  → 66
+reference.wilayas                  → 15
+reference.tx_types                 → 8
+reference.categories               → 13
+staging.transactions               → 10000
+```
+
+Vérifications business rules (doivent toutes être à 0) :
+
+```
+CHECK 2: Duplicate idempotency keys → 0 rows 
+CHECK 3: FAILED tx balance change   → 0 rows 
+CHECK 4: Negative amounts           → 0 rows 
+CHECK 5: Negative balances          → 0 rows 
 ```
 
 
 
-## 13. Infrastructure Terraform
+### Étape 4 — Vérifier les tables et row counts
 
-Le provisionnement de l'instance EC2 est géré par Terraform.
+```bash
+docker exec -i nafadpay-postgres psql -U admin -d nafadpay < sql/show_tables_rowcounts.sql
+```
+
+
+
+### Étape 5 — Lancer EXPLAIN ANALYZE
+
+```bash
+bash scripts/run_explain_analyze.sh
+cat docs/explain_analyze_report.txt
+```
+
+
+
+### Étape 6 — Lancer le bench d'insertion concurrente
+
+```bash
+bash scripts/bench_concurrent_insert.sh
+```
+
+Durée estimée : 5 à 10 minutes. Résultat attendu :
+
+```
+Total rows inserted       → 10000
+Duplicate idempotency_key → 0
+Constraint violations     → 0
+Deadlocks                 → 0
+```
+
+
+
+### Étape 7 — Lancer les tests de validation
+
+```bash
+docker exec -i nafadpay-postgres psql -U admin -d nafadpay \
+  < sql/tests/01_validation_routing_checks.sql
+```
+
+
+
+### Étape 8 — Vérifier l'intégrité core manuellement
+
+```bash
+docker exec -i nafadpay-postgres psql -U admin -d nafadpay -c "
+SELECT 'A: duplicate idempotency' AS check_name, COUNT(*) AS bad_rows
+FROM (SELECT idempotency_key FROM core.transactions GROUP BY idempotency_key HAVING COUNT(*) > 1) x
+UNION ALL
+SELECT 'B: FAILED with balance change', COUNT(*)
+FROM core.transactions WHERE status = 'FAILED' AND balance_after != balance_before
+UNION ALL
+SELECT 'C: negative amount', COUNT(*)
+FROM core.transactions WHERE amount <= 0
+UNION ALL
+SELECT 'D: negative balance_after', COUNT(*)
+FROM core.transactions WHERE balance_after < 0;
+"
+```
+
+Tous les 4 checks doivent retourner `bad_rows = 0`.
+
+
+
+### Étape 9 — Redémarrage propre (repartir de zéro)
+
+```bash
+docker compose -f docker/docker-compose.yml down -v
+bash scripts/bootstrap.sh
+bash scripts/run_all.sh
+```
+
+
+
+### Fichiers de rapport produits
+
+| Fichier | Contenu |
+|---------|---------|
+| `docs/explain_analyze_report.txt` | EXPLAIN ANALYZE pour 5 requêtes avec usage des index |
+| `docs/bench_concurrent_report.txt` | Résultats bench — 10 workers, TPS, checks contraintes |
+| `docs/perf_tests_report.md` | Analyse complète de tous les tests et corrections |
+
+
+
+## 13. Déploiement sur AWS EC2
+
+### Provisionnement avec Terraform
 
 ```bash
 cd terraform/
+cp terraform.tfvars.example terraform.tfvars
+# Remplir key_name avec votre key pair AWS
 terraform init
 terraform plan
 terraform apply
@@ -540,85 +567,82 @@ terraform apply
 
 Les fichiers Terraform créent :
 
-- une instance EC2 (t3.medium, Ubuntu 22.04)
-- un security group (ports 22, 5432 ouverts)
-- une configuration réseau de base
+- Instance EC2 t3.medium, Ubuntu 22.04, `eu-west-3`
+- Security Group (ports 22, 5432, 5433, 80)
+- Tags `Project = nafadpay-g1-oltp`
 
-Les variables sensibles sont passées via `terraform.tfvars` (**ne jamais commiter**).
+Après `terraform apply` :
 
+```
+ec2_public_ip  = "XX.XX.XX.XX"
+ssh_command    = "ssh -i nafadpay-key.pem ubuntu@XX.XX.XX.XX"
+```
 
+### Connexion et setup sur EC2
 
-## 14. Performance et indexation
-
-15 index ont été créés sur les tables core pour optimiser les requêtes analytiques.
-
-| Table | Index | Type |
-|-------|-------|------|
-| `core.transactions` | `idx_tx_source_account`, `idx_tx_date`, `idx_tx_status` | Simples |
-| `core.transactions` | `idx_tx_account_date`, `idx_tx_status_date`, `idx_tx_merchant_status` | Composites |
-| `core.accounts` | `idx_accounts_user`, `idx_accounts_status` | Simples |
-| `core.users` | `idx_users_wilaya` | Simple |
-| `core.merchants` | `idx_merchants_wilaya`, `idx_merchants_category` | Simples |
-| `core.agencies` | `idx_agencies_wilaya` | Simple |
-
-**Résultats EXPLAIN ANALYZE :**
-
-- Q1 (historique utilisateur) : `Index Scan` → **0.174ms** ✅
-- Q13 (totaux quotidiens) : `Seq Scan` → **0.240ms** ✅ (normal sur 66 lignes — bascule automatique sur index en production)
+```bash
+ssh -i nafadpay-key.pem ubuntu@<EC2_PUBLIC_IP>
+git clone https://github.com/Bedra11/nafad-pay-g1-oltp.git
+cd nafad-pay-g1-oltp
+docker compose -f docker/docker-compose.yml up -d
+bash scripts/bootstrap.sh
+bash scripts/run_all.sh
+```
 
 
 
-## 15. Choix techniques
+## 14. Choix techniques
 
 | Choix | Raison |
 |-------|--------|
-| PostgreSQL | Base relationnelle robuste avec contraintes FK/CHECK |
-| Staging TEXT-only | Éviter tout rejet prématuré de données brutes |
-| Go | Performance, simplicité et orchestration fiable |
-| Docker | Environnement reproductible local et EC2 |
+| PostgreSQL 16 | Base relationnelle robuste avec contraintes FK/CHECK |
+| Go (write-path) | Goroutines légères, GC prédictible, pas de GIL — adapté aux invariants monétaires stricts |
+| Staging TEXT-only | Zéro perte de données à l'ingestion, anomalies préservées |
+| Docker | Reproductibilité identique en local et sur EC2 |
 | Terraform | Infrastructure versionnable et reproductible |
-| Scripts `.sh` + `.ps1` | Compatibilité Windows et Linux/EC2 |
+| Scripts `.sh` + `.ps1` | Compatibilité Windows (dev) et Linux/EC2 (prod) |
+| TRUNCATE complet | Idempotence totale — relançable sans erreur |
 | Priorité ANOMALIES > QUARANTINE | Déterminisme du routage, zéro chevauchement |
+| Index partiel `merchant_status` | Évite d'indexer les transactions TRF (`merchant_id = NULL`) |
 
 
 
-## 16. Rôles de l'équipe
+## 15. Rôles de l'équipe
 
-| Membre | Rôle | Responsabilités |
-|--------|------|----------------|
-| Member 1 | Core Database Owner | Schéma core, contraintes, tables de référence |
-| Member 2 | Staging & Loading Engine | Tables staging, Docker, scripts bootstrap, smoke test |
-| Member 3 | Validation & Routing | Règles anomalies/quarantine, pipeline Go, core_ready |
-| Member 4 | Queries & Performance & AWS | Requêtes analytiques, indexes, déploiement EC2 |
-| Member 5 | Documentation & Architecture & Terraform | README, early_stage, at_scale, fichiers Terraform |
+| Membre | Branche | Rôle | Responsabilités |
+|--------|---------|------|----------------|
+| Membre 1 | `feature/core-*` | Core Database Owner | Schéma core, contraintes FK/CHECK, tables de référence |
+| Membre 2 | `feat/staging-*` | Staging & Loading Engine | Tables staging TEXT-only, Docker, scripts bootstrap, smoke test |
+| Membre 3 | `feature/quarantine-anomalies` | Validation & Routing | Règles anomalies/quarantine, pipeline Go 12 étapes |
+| Membre 4 | `feature/quarantine-anomalies` | Queries & Performance & AWS | 20 requêtes analytiques, 27 index, EXPLAIN ANALYZE, bench concurrent |
+| **Membre 5** | **`feature/documentation-architecture`** | **Documentation & Architecture & Terraform** | **README, `docs/early_stage.md`, `docs/at_scale.md`, fichiers Terraform, provisionnement EC2** |
 
 
 
-## 17. Limitations
+## 16. Limitations
 
 - Seulement **66 transactions** atteignent le core sur 10 000 — 64.2% sont des conflits d'idempotency
-- **0 transaction marchande** dans core (toutes rejetées par le pipeline — à corriger par Membre 3)
-- **349 comptes** avec `available_balance > balance` — incohérence à corriger (Membre 1)
-- Noms marchands affichant `undefined` dans les données CSV sources (Membre 1)
-- Le pipeline Go repart de zéro à chaque exécution (TRUNCATE complet — non scalable)
+- **0 transaction marchande** dans core (toutes rejetées par le pipeline — à investiguer)
+- **349 comptes** avec `available_balance > balance` — incohérence dans les données sources
+- Le pipeline Go repart de zéro à chaque exécution (TRUNCATE complet — non scalable sur > 500k lignes)
 
 
 
-## 18. Améliorations futures
+## 17. Améliorations futures
 
 - Résolution des conflits d'idempotency pour augmenter le taux de transactions en core
-- Ajout d'un système de monitoring des pipelines (alertes, logs structurés)
-- Migration vers AWS RDS pour la couche core en production
-- Partitionnement des tables transactions par date
+- Pipeline incrémental avec watermark (remplacement du TRUNCATE)
+- Migration vers AWS RDS Multi-AZ pour la haute disponibilité
+- Partitionnement de `core.transactions` par date (trimestre)
 - Ajout de tests unitaires Go pour chaque règle de validation
-- Dashboard de visualisation des métriques de qualité des données
+- CloudWatch + Grafana pour le monitoring en production
 
 
 
-## 19. Conclusion
+## 18. Conclusion
 
 Ce projet met en pratique les concepts d'ingénierie de données en construisant un pipeline complet, de la donnée brute jusqu'au stockage fiable et interrogeable.
 
-L'approche est modulaire, reproductible et extensible, ce qui constitue une base solide pour des systèmes de données en production.
+L'approche est modulaire, reproductible et extensible : `bootstrap.sh` + `run_all.sh` suffisent pour reproduire l'ensemble du pipeline en < 15 minutes sur n'importe quelle machine avec Docker.
 
 > **"staging is exhaustive — core is trusted"**
