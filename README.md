@@ -263,6 +263,7 @@ Durée totale observée : **~9 secondes**
 | Requête | Plan | Temps |
 |---------|------|-------|
 | Q1 — historique utilisateur | Index Scan `idx_accounts_user` | 0.174ms  |
+| Q2 — totaux quotidiens | Index Scan `idx_tx_date` | < 0.1ms  |
 | Q4 — lookup par référence | Index Scan `transactions_reference_key` | < 0.1ms  |
 | Q5 — dépenses mensuelles | Index Scan `idx_tx_account_date` | < 0.35ms  |
 | Q13 — totaux quotidiens | Seq Scan (normal sur 66 lignes) | 0.240ms  |
@@ -276,6 +277,12 @@ Durée totale observée : **~9 secondes**
 | Violations `UNIQUE` idempotency | 0  |
 | Violations CHECK | 0  |
 | Deadlocks | 0  |
+| Temps écoulé | 547s |
+| TPS mesuré (docker exec overhead) | ~18 tx/s* |
+
+*TPS mesuré via `docker exec` individuel par insertion (overhead ~50ms/appel sur Windows).
+Le moteur PostgreSQL traite chaque INSERT en < 1ms — un pool de connexions
+persistent atteindrait 1 000–5 000+ TPS sur le même matériel.
 
 
 
@@ -355,6 +362,8 @@ Le projet utilise une organisation en branches par fonctionnalité.
 | `feat/staging-docker` | Membre 2 | Setup Docker et scripts bootstrap |
 | `feature/update-core-accounts-fields` | Membre 1 | Mise à jour champs core accounts |
 | `feature/quarantine-anomalies` | Membre 3 | Anomalies, quarantine, pipeline Go |
+| `fix/queries-wilaya-and-demo-params` | Membre 4 | Correction Q5/Q6 wilaya_name + paramètres démo |
+| `feat/perf-tests` | Membre 4 | EXPLAIN ANALYZE, bench concurrent, rapport perf |
 | **`feature/documentation-architecture`** | **Membre 5** | **README, early_stage, at_scale, Terraform** |
 
 ```mermaid
@@ -370,6 +379,8 @@ stg1[feat/staging-schema] --> main
 stg2[feat/staging-docker] --> main
 upd[feature/update-core-accounts-fields] --> main
 qa[feature/quarantine-anomalies] --> main
+fix[fix/queries-wilaya-and-demo-params] --> main
+perf[feat/perf-tests] --> main
 doc[feature/documentation-architecture] --> main
 ```
 
@@ -607,19 +618,10 @@ bash scripts/run_all.sh
 
 
 
-## 15. Rôles de l'équipe
-
-| Membre | Branche | Rôle | Responsabilités |
-|--------|---------|------|----------------|
-| Membre 1 | `feature/core-*` | Core Database Owner | Schéma core, contraintes FK/CHECK, tables de référence |
-| Membre 2 | `feat/staging-*` | Staging & Loading Engine | Tables staging TEXT-only, Docker, scripts bootstrap, smoke test |
-| Membre 3 | `feature/quarantine-anomalies` | Validation & Routing | Règles anomalies/quarantine, pipeline Go 12 étapes |
-| Membre 4 | `feature/quarantine-anomalies` | Queries & Performance & AWS | 20 requêtes analytiques, 27 index, EXPLAIN ANALYZE, bench concurrent |
-| **Membre 5** | **`feature/documentation-architecture`** | **Documentation & Architecture & Terraform** | **README, `docs/early_stage.md`, `docs/at_scale.md`, fichiers Terraform, provisionnement EC2** |
 
 
 
-## 16. Limitations
+## 15. Limitations
 
 - Seulement **66 transactions** atteignent le core sur 10 000 — 64.2% sont des conflits d'idempotency
 - **0 transaction marchande** dans core (toutes rejetées par le pipeline — à investiguer)
@@ -628,7 +630,7 @@ bash scripts/run_all.sh
 
 
 
-## 17. Améliorations futures
+## 16. Améliorations futures
 
 - Résolution des conflits d'idempotency pour augmenter le taux de transactions en core
 - Pipeline incrémental avec watermark (remplacement du TRUNCATE)
@@ -639,7 +641,7 @@ bash scripts/run_all.sh
 
 
 
-## 18. Conclusion
+## 17. Conclusion
 
 Ce projet met en pratique les concepts d'ingénierie de données en construisant un pipeline complet, de la donnée brute jusqu'au stockage fiable et interrogeable.
 
