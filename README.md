@@ -618,10 +618,89 @@ bash scripts/run_all.sh
 
 
 
+# 15. Early Stage (Implémentation initiale)
+
+## Objectif
+
+Mettre en place une première version fonctionnelle du système OLTP permettant de :
+
+- Charger les données CSV
+- Stocker les données dans PostgreSQL (RDS)
+- Appliquer les règles métier
+- Produire des données propres et fiables
+
+## Architecture Early Stage
+
+```
+PC local
+   ↓ SSH
+EC2 (Ubuntu)
+   ├── code Go (pipeline)
+   ├── scripts SQL
+   ├── fichiers CSV
+   ↓ connexion PostgreSQL
+RDS PostgreSQL
+   ├── staging
+   ├── core
+   ├── quarantine
+   └── anomalies
+```
+
+## Étapes réalisées
+
+### Clonage du projet sur EC2
+
+Le projet est cloné sur EC2 afin de disposer de :
+
+- Code Go
+- Scripts SQL
+- Fichiers CSV
+
+### Création des tables dans RDS
+
+Les schémas et tables sont créés dans RDS :
+
+- `staging`
+- `core`
+- `quarantine`
+- `anomalies`
+- `reference`
+
+### Chargement des données dans staging
+
+Les fichiers CSV sont chargés dans les tables staging.
+
+### Exécution du pipeline
+
+```bash
+go run eda/cmd/pipeline/main.go
+```
+
+Le pipeline effectue automatiquement :
+
+- TRUNCATE des tables
+- Chargement des références
+- Transformation des données
+- Validation métier
+- Classification des données
+
+### Résultat du pipeline
+
+Les données sont réparties en :
+
+- **core** → données propres
+- **quarantine** → données suspectes
+- **anomalies** → erreurs critiques
+
+## Logique de fonctionnement
+
+```
+CSV → staging → pipeline → core / quarantine / anomalies
+```
 
 
 
-## 15. Limitations
+## Limitations
 
 - Seulement **66 transactions** atteignent le core sur 10 000 — 64.2% sont des conflits d'idempotency
 - **0 transaction marchande** dans core (toutes rejetées par le pipeline — à investiguer)
@@ -630,7 +709,7 @@ bash scripts/run_all.sh
 
 
 
-## 16. Améliorations futures
+## Améliorations futures
 
 - Résolution des conflits d'idempotency pour augmenter le taux de transactions en core
 - Pipeline incrémental avec watermark (remplacement du TRUNCATE)
