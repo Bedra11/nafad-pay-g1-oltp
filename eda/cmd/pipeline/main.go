@@ -263,8 +263,7 @@ ON CONFLICT (reason_code) DO UPDATE
 	// all filters. It is prepared first (deduplicated, type-cast, validated)
 	// then inserted into core.transactions in one atomic step.
 	for _, f := range []string{
-		"sql/core_ready/01_prepare_core_transactions.sql",
-		"sql/core_ready/02_insert_core_transactions.sql",
+		"sql/core_load/05_insert_core_transactions.sql",
 	} {
 		mustRunFile(f)
 	}
