@@ -648,7 +648,7 @@ RDS PostgreSQL
 
 ## Étapes réalisées
 
-### Clonage du projet sur EC2
+### Clonage du projet sur EC2 (nafadpay-g1-ec2)
 
 Le projet est cloné sur EC2 afin de disposer de :
 
@@ -656,7 +656,7 @@ Le projet est cloné sur EC2 afin de disposer de :
 - Scripts SQL
 - Fichiers CSV
 
-### Création des tables dans RDS
+### Création des tables dans RDS (nafadpay-db)
 
 Les schémas et tables sont créés dans RDS :
 
