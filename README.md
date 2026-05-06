@@ -618,9 +618,9 @@ bash scripts/run_all.sh
 
 
 
-# 15. Early Stage (Implémentation initiale)
+## 15. Early Stage (Implémentation initiale)
 
-## Objectif
+### Objectif
 
 Mettre en place une première version fonctionnelle du système OLTP permettant de :
 
@@ -629,7 +629,7 @@ Mettre en place une première version fonctionnelle du système OLTP permettant 
 - Appliquer les règles métier
 - Produire des données propres et fiables
 
-## Architecture Early Stage
+### Architecture Early Stage
 
 ```
 PC local
@@ -657,9 +657,9 @@ EC2 : exécute go run
 RDS : reçoit les INSERT / TRUNCATE / UPDATE
 
 
-## Étapes réalisées
+### Étapes réalisées
 
-### Clonage du projet sur EC2 (nafadpay-g1-ec2)
+#### Clonage du projet sur EC2 (nafadpay-g1-ec2)
 
 Le projet est cloné sur EC2 afin de disposer de :
 
@@ -669,13 +669,13 @@ Le projet est cloné sur EC2 afin de disposer de :
 
 
 
-## Connexion à EC2
+#### Connexion à EC2
 
 L’accès au serveur EC2 se fait via une clé SSH :
 
 - connexion sécurisée avec clé privée (.pem)
 
-## Exécution du pipeline
+#### Exécution du pipeline
 
 Une fois connecté à EC2, l’exécution du pipeline se fait avec :
 
@@ -691,7 +691,7 @@ Cette commande permet de :
 - Validation métier
 - Classification des données
 
-### Résultat du pipeline
+#### Résultat du pipeline
 
 Les données sont réparties en :
 
@@ -699,14 +699,14 @@ Les données sont réparties en :
 - **quarantine** → données suspectes
 - **anomalies** → erreurs critiques
 
-## Logique de fonctionnement
+#### Logique de fonctionnement
 
 ```
 CSV → staging → pipeline → core / quarantine / anomalies
 
 ```
 
-## Connexion à RDS
+#### Connexion à RDS
 
 La base de données RDS est accessible via PostgreSQL :
 
@@ -714,7 +714,7 @@ La base de données RDS est accessible via PostgreSQL :
 psql -h <RDS_ENDPOINT> -U nafad_admin -d nafadpay
 ```
 
-## Exécution des requêtes
+#### Exécution des requêtes
 
 Une fois connecté à RDS, il est possible d’exécuter des requêtes SQL sur les tables :
 
@@ -722,7 +722,7 @@ Une fois connecté à RDS, il est possible d’exécuter des requêtes SQL sur l
 - vérifier les résultats du pipeline
 - analyser les tables core, quarantine et anomalies
 
-## Limitations
+#### Limitations
 
 - Seulement **66 transactions** atteignent le core sur 10 000 — 64.2% sont des conflits d'idempotency
 - **0 transaction marchande** dans core (toutes rejetées par le pipeline — à investiguer)
@@ -731,7 +731,7 @@ Une fois connecté à RDS, il est possible d’exécuter des requêtes SQL sur l
 
 
 
-## Améliorations futures
+#### Améliorations futures
 
 - Résolution des conflits d'idempotency pour augmenter le taux de transactions en core
 - Pipeline incrémental avec watermark (remplacement du TRUNCATE)
@@ -741,9 +741,9 @@ Une fois connecté à RDS, il est possible d’exécuter des requêtes SQL sur l
 - CloudWatch + Grafana pour le monitoring en production
 
 
-#  At Scale (Passage à l’échelle)
+## 16.  At Scale (Passage à l’échelle)
 
-##  Objectif
+###  Objectif
 
 Adapter le système pour gérer :
 
@@ -751,16 +751,16 @@ Adapter le système pour gérer :
 - Plusieurs utilisateurs simultanés
 - Des performances élevées
 
-##  Limites actuelles
+###  Limites actuelles
 
 - Pipeline exécuté sur une seule machine (EC2)
 - Chargement manuel des données
 - Absence de parallélisation
 - Base RDS non optimisée pour forte charge
 
-##  Améliorations proposées
+###  Améliorations proposées
 
-### Stockage des données
+#### Stockage des données
 
 Utilisation de Amazon S3 pour stocker les fichiers CSV
 
@@ -768,14 +768,14 @@ Utilisation de Amazon S3 pour stocker les fichiers CSV
 -  Accès partagé
 -  Haute durabilité
 
-###  Ingestion automatisée
+####  Ingestion automatisée
 
 Automatiser le chargement des données depuis S3 vers RDS
 
 -  Réduction des opérations manuelles
 -  Pipeline reproductible
 
-### Optimisation de la base de données
+#### Optimisation de la base de données
 
 - Ajout d’index sur les colonnes fréquemment utilisées
 - Activation du mode Multi-AZ
@@ -783,21 +783,21 @@ Automatiser le chargement des données depuis S3 vers RDS
 -  Amélioration des performances
 -  Haute disponibilité
 
-### Traitement parallèle
+#### Traitement parallèle
 
 Utilisation de goroutines pour traiter les données en parallèle
 
 -  Réduction du temps de traitement
 -  Meilleure utilisation des ressources
 
-### Monitoring et observabilité
+#### Monitoring et observabilité
 
 Intégration de CloudWatch pour surveiller le système
 
 -  Suivi des performances
 -  Détection des anomalies
 
-##  Architecture cible
+###  Architecture cible
 
 ```
 Clients
@@ -809,7 +809,7 @@ S3 (stockage des données)
 RDS PostgreSQL (données structurées)
 ```
 
-##  Résultat attendu
+###  Résultat attendu
 
 -  Système scalable
 -  Traitement rapide
@@ -817,7 +817,7 @@ RDS PostgreSQL (données structurées)
 -  Prêt pour un environnement de production
 
 
-## 16. Conclusion
+## 17. Conclusion
 
 Ce projet met en pratique les concepts d'ingénierie de données en construisant un pipeline complet, de la donnée brute jusqu'au stockage fiable et interrogeable.
 
