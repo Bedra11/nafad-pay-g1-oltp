@@ -646,6 +646,17 @@ RDS PostgreSQL
    └── anomalies
 ```
 
+Maintenant que main.go est configuré avec l’endpoint RDS :
+
+nafadpay-db.cfqiicgoicgi.eu-west-3.rds.amazonaws.com
+
+chaque exécution du pipeline sur EC2 écrit les résultats dans RDS.
+
+EC2 : exécute go run
+        ↓
+RDS : reçoit les INSERT / TRUNCATE / UPDATE
+
+
 ## Étapes réalisées
 
 ### Clonage du projet sur EC2 (nafadpay-g1-ec2)
@@ -719,8 +730,83 @@ CSV → staging → pipeline → core / quarantine / anomalies
 - CloudWatch + Grafana pour le monitoring en production
 
 
+#  At Scale (Passage à l’échelle)
 
-## 17. Conclusion
+##  Objectif
+
+Adapter le système pour gérer :
+
+- Un grand volume de transactions
+- Plusieurs utilisateurs simultanés
+- Des performances élevées
+
+##  Limites actuelles
+
+- Pipeline exécuté sur une seule machine (EC2)
+- Chargement manuel des données
+- Absence de parallélisation
+- Base RDS non optimisée pour forte charge
+
+##  Améliorations proposées
+
+### Stockage des données
+
+Utilisation de Amazon S3 pour stocker les fichiers CSV
+
+-  Stockage scalable
+-  Accès partagé
+-  Haute durabilité
+
+###  Ingestion automatisée
+
+Automatiser le chargement des données depuis S3 vers RDS
+
+-  Réduction des opérations manuelles
+-  Pipeline reproductible
+
+### Optimisation de la base de données
+
+- Ajout d’index sur les colonnes fréquemment utilisées
+- Activation du mode Multi-AZ
+
+-  Amélioration des performances
+-  Haute disponibilité
+
+### Traitement parallèle
+
+Utilisation de goroutines pour traiter les données en parallèle
+
+-  Réduction du temps de traitement
+-  Meilleure utilisation des ressources
+
+### Monitoring et observabilité
+
+Intégration de CloudWatch pour surveiller le système
+
+-  Suivi des performances
+-  Détection des anomalies
+
+##  Architecture cible
+
+```
+Clients
+   ↓
+EC2 (pipeline / API)
+   ↓
+S3 (stockage des données)
+   ↓
+RDS PostgreSQL (données structurées)
+```
+
+##  Résultat attendu
+
+-  Système scalable
+-  Traitement rapide
+-  Haute disponibilité
+-  Prêt pour un environnement de production
+
+
+## 16. Conclusion
 
 Ce projet met en pratique les concepts d'ingénierie de données en construisant un pipeline complet, de la donnée brute jusqu'au stockage fiable et interrogeable.
 
