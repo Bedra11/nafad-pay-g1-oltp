@@ -618,10 +618,100 @@ bash scripts/run_all.sh
 
 
 
+# 15. Early Stage (Implémentation initiale)
+
+## Objectif
+
+Mettre en place une première version fonctionnelle du système OLTP permettant de :
+
+- Charger les données CSV
+- Stocker les données dans PostgreSQL (RDS)
+- Appliquer les règles métier
+- Produire des données propres et fiables
+
+## Architecture Early Stage
+
+```
+PC local
+   ↓ SSH
+EC2 (Ubuntu)
+   ├── code Go (pipeline)
+   ├── scripts SQL
+   ├── fichiers CSV
+   ↓ connexion PostgreSQL
+RDS PostgreSQL
+   ├── staging
+   ├── core
+   ├── quarantine
+   └── anomalies
+```
+
+Maintenant que main.go est configuré avec l’endpoint RDS :
+
+nafadpay-db.cfqiicgoicgi.eu-west-3.rds.amazonaws.com
+
+chaque exécution du pipeline sur EC2 écrit les résultats dans RDS.
+
+EC2 : exécute go run
+        ↓
+RDS : reçoit les INSERT / TRUNCATE / UPDATE
+
+
+## Étapes réalisées
+
+### Clonage du projet sur EC2 (nafadpay-g1-ec2)
+
+Le projet est cloné sur EC2 afin de disposer de :
+
+- Code Go
+- Scripts SQL
+- Fichiers CSV
+
+### Création des tables dans RDS (nafadpay-db)
+
+Les schémas et tables sont créés dans RDS :
+
+- `staging`
+- `core`
+- `quarantine`
+- `anomalies`
+- `reference`
+
+### Chargement des données dans staging
+
+Les fichiers CSV sont chargés dans les tables staging.
+
+### Exécution du pipeline
+
+```bash
+go run eda/cmd/pipeline/main.go
+```
+
+Le pipeline effectue automatiquement :
+
+- TRUNCATE des tables
+- Chargement des références
+- Transformation des données
+- Validation métier
+- Classification des données
+
+### Résultat du pipeline
+
+Les données sont réparties en :
+
+- **core** → données propres
+- **quarantine** → données suspectes
+- **anomalies** → erreurs critiques
+
+## Logique de fonctionnement
+
+```
+CSV → staging → pipeline → core / quarantine / anomalies
+```
 
 
 
-## 15. Limitations
+## Limitations
 
 - Seulement **66 transactions** atteignent le core sur 10 000 — 64.2% sont des conflits d'idempotency
 - **0 transaction marchande** dans core (toutes rejetées par le pipeline — à investiguer)
@@ -630,7 +720,7 @@ bash scripts/run_all.sh
 
 
 
-## 16. Améliorations futures
+## Améliorations futures
 
 - Résolution des conflits d'idempotency pour augmenter le taux de transactions en core
 - Pipeline incrémental avec watermark (remplacement du TRUNCATE)
@@ -640,8 +730,83 @@ bash scripts/run_all.sh
 - CloudWatch + Grafana pour le monitoring en production
 
 
+#  At Scale (Passage à l’échelle)
 
-## 17. Conclusion
+##  Objectif
+
+Adapter le système pour gérer :
+
+- Un grand volume de transactions
+- Plusieurs utilisateurs simultanés
+- Des performances élevées
+
+##  Limites actuelles
+
+- Pipeline exécuté sur une seule machine (EC2)
+- Chargement manuel des données
+- Absence de parallélisation
+- Base RDS non optimisée pour forte charge
+
+##  Améliorations proposées
+
+### Stockage des données
+
+Utilisation de Amazon S3 pour stocker les fichiers CSV
+
+-  Stockage scalable
+-  Accès partagé
+-  Haute durabilité
+
+###  Ingestion automatisée
+
+Automatiser le chargement des données depuis S3 vers RDS
+
+-  Réduction des opérations manuelles
+-  Pipeline reproductible
+
+### Optimisation de la base de données
+
+- Ajout d’index sur les colonnes fréquemment utilisées
+- Activation du mode Multi-AZ
+
+-  Amélioration des performances
+-  Haute disponibilité
+
+### Traitement parallèle
+
+Utilisation de goroutines pour traiter les données en parallèle
+
+-  Réduction du temps de traitement
+-  Meilleure utilisation des ressources
+
+### Monitoring et observabilité
+
+Intégration de CloudWatch pour surveiller le système
+
+-  Suivi des performances
+-  Détection des anomalies
+
+##  Architecture cible
+
+```
+Clients
+   ↓
+EC2 (pipeline / API)
+   ↓
+S3 (stockage des données)
+   ↓
+RDS PostgreSQL (données structurées)
+```
+
+##  Résultat attendu
+
+-  Système scalable
+-  Traitement rapide
+-  Haute disponibilité
+-  Prêt pour un environnement de production
+
+
+## 16. Conclusion
 
 Ce projet met en pratique les concepts d'ingénierie de données en construisant un pipeline complet, de la donnée brute jusqu'au stockage fiable et interrogeable.
 
