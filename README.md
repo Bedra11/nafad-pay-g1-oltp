@@ -586,13 +586,13 @@ Après `terraform apply` :
 
 ```
 ec2_public_ip  = "XX.XX.XX.XX"
-ssh_command    = "ssh -i nafadpay-key.pem ubuntu@XX.XX.XX.XX"
+ssh_command    = "ssh -i nafadpay-g1-ec2.pem ubuntu@XX.XX.XX.XX"
 ```
 
 ### Connexion et setup sur EC2
 
 ```bash
-ssh -i nafadpay-key.pem ubuntu@<EC2_PUBLIC_IP>
+ssh -i nafadpay-g1-ec2.pem ubuntu@<EC2_PUBLIC_IP>
 git clone https://github.com/Bedra11/nafad-pay-g1-oltp.git
 cd nafad-pay-g1-oltp
 docker compose -f docker/docker-compose.yml up -d
@@ -667,27 +667,23 @@ Le projet est cloné sur EC2 afin de disposer de :
 - Scripts SQL
 - Fichiers CSV
 
-### Création des tables dans RDS (nafadpay-db)
 
-Les schémas et tables sont créés dans RDS :
 
-- `staging`
-- `core`
-- `quarantine`
-- `anomalies`
-- `reference`
+## Connexion à EC2
 
-### Chargement des données dans staging
+L’accès au serveur EC2 se fait via une clé SSH :
 
-Les fichiers CSV sont chargés dans les tables staging.
+- connexion sécurisée avec clé privée (.pem)
 
-### Exécution du pipeline
+## Exécution du pipeline
+
+Une fois connecté à EC2, l’exécution du pipeline se fait avec :
 
 ```bash
 go run eda/cmd/pipeline/main.go
 ```
 
-Le pipeline effectue automatiquement :
+Cette commande permet de :
 
 - TRUNCATE des tables
 - Chargement des références
@@ -707,9 +703,24 @@ Les données sont réparties en :
 
 ```
 CSV → staging → pipeline → core / quarantine / anomalies
+
 ```
 
+## Connexion à RDS
 
+La base de données RDS est accessible via PostgreSQL :
+
+```
+psql -h <RDS_ENDPOINT> -U nafad_admin -d nafadpay
+```
+
+## Exécution des requêtes
+
+Une fois connecté à RDS, il est possible d’exécuter des requêtes SQL sur les tables :
+
+- visualiser les données
+- vérifier les résultats du pipeline
+- analyser les tables core, quarantine et anomalies
 
 ## Limitations
 
