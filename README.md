@@ -634,13 +634,14 @@ Mettre en place une première version fonctionnelle du système OLTP permettant 
 ```
 PC local
    ↓ SSH
-EC2 (Ubuntu)
-   ├── code Go (pipeline)
+EC2 Ubuntu
+   ├── Go pipeline
    ├── scripts SQL
-   ├── fichiers CSV
-   ↓ connexion PostgreSQL
+   ├── fichiers CSV G1_OLTP/
+   ↓ PostgreSQL TLS
 RDS PostgreSQL
    ├── staging
+   ├── reference
    ├── core
    ├── quarantine
    └── anomalies
@@ -800,13 +801,25 @@ Intégration de CloudWatch pour surveiller le système
 ###  Architecture cible
 
 ```
-Clients
-   ↓
-EC2 (pipeline / API)
-   ↓
-S3 (stockage des données)
-   ↓
-RDS PostgreSQL (données structurées)
+Clients / API
+      ↓
+EC2 ou ECS Fargate
+      ↓
+RDS Proxy
+      ↓
+RDS PostgreSQL Multi-AZ
+   ├── Primary writer : eu-west-3a
+   ├── Standby / replica : eu-west-3b
+   └── Read replica / DR : eu-west-3c
+
+S3
+ └── backups / dumps / exports
+
+CloudWatch
+ └── logs, metrics, alarms
+
+Secrets Manager + KMS
+ └── mots de passe + chiffrement
 ```
 
 ###  Résultat attendu
